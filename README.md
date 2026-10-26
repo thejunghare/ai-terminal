@@ -12,7 +12,7 @@ It never runs anything for you. It only fills in or explains your prompt.
 ## Install
 
 ```bash
-git clone https://github.com/<you>/ai-terminal.git ~/ai-terminal
+git clone https://github.com/thejunghare/ai-terminal.git ~/ai-terminal
 ~/ai-terminal/install.sh
 source ~/.zshrc
 ait key          # paste your Anthropic API key; it's stored in macOS Keychain
