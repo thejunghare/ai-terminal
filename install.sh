@@ -35,7 +35,9 @@ echo "  2. Run: ait key        # stores your Anthropic API key in Keychain"
 echo "  3. Type a command, press Ctrl+E to explain it"
 
 # The plugin only loads in zsh. Warn if this terminal is running something else.
-PARENT_SHELL="$(basename "$(ps -o comm= -p "$PPID" 2>/dev/null)" | tr -d -)"
+PARENT_SHELL="$(ps -o comm= -p "$PPID" 2>/dev/null || true)"
+PARENT_SHELL="${PARENT_SHELL#-}"          # login shells show up as "-bash" / "-zsh"
+PARENT_SHELL="${PARENT_SHELL##*/}"
 if [[ "$PARENT_SHELL" != zsh ]]; then
   echo
   echo "⚠ This terminal is running $PARENT_SHELL, but ai-terminal needs zsh."

@@ -7,6 +7,12 @@
 #   AIT_EXPLAIN_KEY   key binding for explain   (default: ^E)
 #   AIT_SOCK          daemon socket path        (default: ~/.ai-terminal.sock)
 
+# Must stay POSIX so bash can parse it: bail out before any zsh-only syntax.
+if [ -z "$ZSH_VERSION" ]; then
+  echo "ai-terminal: needs zsh, but this shell isn't zsh. Run 'zsh' first." >&2
+  return 1 2>/dev/null || exit 1
+fi
+
 0=${(%):-%N}
 typeset -g AIT_ROOT=${0:A:h:h}
 typeset -g AIT_SOCK=${AIT_SOCK:-$HOME/.ai-terminal.sock}
