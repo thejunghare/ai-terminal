@@ -1,11 +1,12 @@
 # ai-terminal — AI help inside your normal zsh prompt.
 #
 #   Ctrl+E   on a typed command: explain it (first press still jumps to end of line)
-#   ait      helper command: ait start|stop|restart|status|key|explain <cmd>|log
+#   ait      helper command: ait start|stop|restart|status|key [anthropic|nvidia]|explain <cmd>|log
 #
 # Settings (set before sourcing):
 #   AIT_EXPLAIN_KEY   key binding for explain   (default: ^E)
 #   AIT_SOCK          daemon socket path        (default: ~/.ai-terminal.sock)
+#   AIT_PROVIDER      anthropic | nvidia        (default: whichever has a key, Anthropic first)
 
 # Must stay POSIX so bash can parse it: bail out before any zsh-only syntax.
 if [ -z "$ZSH_VERSION" ]; then
@@ -100,12 +101,17 @@ ait() {
     status)  _ait_request ping "" ;;
     explain) shift; _ait_request explain "$*" ;;
     key)
-      local key
-      read -rs "key?Anthropic API key: "; print
+      local provider=${2:-anthropic} service label key
+      case $provider in
+        anthropic) service=ai-terminal;        label="Anthropic API key" ;;
+        nvidia)    service=ai-terminal-nvidia; label="NVIDIA API key (nvapi-...)" ;;
+        *)         print -u2 "usage: ait key [anthropic|nvidia]"; return 1 ;;
+      esac
+      read -rs "key?$label: "; print
       [[ -n $key ]] || return 1
-      security add-generic-password -U -s ai-terminal -a "$USER" -w "$key" \
-        && print "Saved to Keychain (service: ai-terminal)." && _ait_daemon_stop ;;
+      security add-generic-password -U -s $service -a "$USER" -w "$key" \
+        && print "Saved to Keychain (service: $service)." && _ait_daemon_stop ;;
     log)     tail -n 50 ~/Library/Logs/ai-terminal.log ;;
-    *)       print "usage: ait start|stop|restart|status|key|explain <command>|log" ;;
+    *)       print "usage: ait start|stop|restart|status|key [anthropic|nvidia]|explain <command>|log" ;;
   esac
 }

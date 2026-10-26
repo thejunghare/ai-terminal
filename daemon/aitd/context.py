@@ -8,6 +8,7 @@ import subprocess
 # Matches are replaced before anything leaves the machine.
 _SECRET_PATTERNS = [
     (re.compile(r"sk-[A-Za-z0-9_\-]{16,}"), "[REDACTED]"),               # Anthropic/OpenAI style keys
+    (re.compile(r"nvapi-[A-Za-z0-9_\-]{16,}"), "[REDACTED]"),            # NVIDIA API keys
     (re.compile(r"gh[pousr]_[A-Za-z0-9]{20,}"), "[REDACTED]"),           # GitHub tokens
     (re.compile(r"AKIA[0-9A-Z]{16}"), "[REDACTED]"),                     # AWS access key ids
     (re.compile(r"xox[baprs]-[A-Za-z0-9\-]{10,}"), "[REDACTED]"),        # Slack tokens

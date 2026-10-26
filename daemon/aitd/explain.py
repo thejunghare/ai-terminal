@@ -11,7 +11,7 @@ async def explain(command: str, cwd: str) -> str:
     if safe_cmd in _cache:
         return _cache[safe_cmd]
     text = await llm.complete(
-        llm.EXPLAIN_MODEL,
+        "explain",
         prompts.EXPLAIN_SYSTEM,
         prompts.explain_user(safe_cmd, context.describe(cwd)),
     )

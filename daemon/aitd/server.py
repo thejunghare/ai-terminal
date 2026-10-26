@@ -11,8 +11,6 @@ import os
 import signal
 import sys
 
-import anthropic
-
 from . import __version__, explain, llm
 
 SOCK_PATH = os.environ.get("AIT_SOCK", os.path.expanduser("~/.ai-terminal.sock"))
@@ -39,7 +37,7 @@ async def _read_request(reader: asyncio.StreamReader) -> list[str]:
 
 async def _dispatch(kind: str, cwd: str, payload: str) -> str:
     if kind == "ping":
-        return f"pong {__version__}"
+        return f"pong {__version__} ({llm.active_provider()})"
     if kind == "explain":
         return await explain.explain(payload, cwd)
     raise ValueError(f"unknown request type: {kind}")
@@ -52,9 +50,9 @@ async def _handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) ->
         reply = await _dispatch(kind, cwd, payload)
     except llm.MissingKey as e:
         reply = f"ERR: {e}"
-    except anthropic.APIError as e:
-        log.warning("api error: %s", e)
-        reply = f"ERR: Claude API error: {getattr(e, 'message', e)}"
+    except llm.LLMError as e:
+        log.warning("llm error: %s", e)
+        reply = f"ERR: {e}"
     except Exception as e:  # never let one bad request kill the daemon
         log.exception("request failed")
         reply = f"ERR: {e}"

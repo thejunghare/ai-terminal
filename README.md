@@ -15,8 +15,17 @@ It never runs anything for you. It only fills in or explains your prompt.
 git clone https://github.com/thejunghare/ai-terminal.git ~/ai-terminal
 ~/ai-terminal/install.sh
 source ~/.zshrc
-ait key          # paste your Anthropic API key; it's stored in macOS Keychain
+ait key nvidia   # or: ait key anthropic — the key is stored in macOS Keychain
 ```
+
+You need an API key from either provider:
+
+| Provider | Get a key | Command |
+|---|---|---|
+| **NVIDIA** (build.nvidia.com, free tier) | [build.nvidia.com](https://build.nvidia.com) → any model → *Get API Key* (starts with `nvapi-`) | `ait key nvidia` |
+| **Anthropic** (Claude) | [console.anthropic.com](https://console.anthropic.com) | `ait key anthropic` |
+
+If you save both, Anthropic is used. To choose, put `export AIT_PROVIDER=nvidia` (or `anthropic`) above the `source` line in `~/.zshrc`.
 
 ## Use
 
@@ -31,9 +40,9 @@ Press `Ctrl+E`. The explanation prints above your prompt. If your cursor is in t
 | Command | What it does |
 |---|---|
 | `ait explain <cmd>` | explain without the keybinding |
-| `ait status` | check the background daemon |
+| `ait status` | check the background daemon and which provider/model it uses |
 | `ait start` / `stop` / `restart` | manage the daemon (it auto-starts on first use) |
-| `ait key` | save an API key to Keychain |
+| `ait key nvidia` / `ait key anthropic` | save an API key to Keychain |
 | `ait log` | show the daemon log |
 
 Set `AIT_EXPLAIN_KEY='^X^E'` before the `source` line to use a different key.
@@ -41,10 +50,18 @@ Set `AIT_EXPLAIN_KEY='^X^E'` before the `source` line to use a different key.
 ## How it works
 
 ```
-zsh (ai-terminal.zsh) ──Unix socket──▶ aitd (Python daemon) ──▶ Claude API
+zsh (ai-terminal.zsh) ──Unix socket──▶ aitd (Python daemon) ──▶ Claude API or NVIDIA API
 ```
 
-A long-running daemon keeps the API client warm, so there's no Python startup on every keypress. Explanations use `claude-sonnet-5-5`. Fast suggestions will use `claude-haiku-5-5`. You can override them with `AIT_EXPLAIN_MODEL` / `AIT_SUGGEST_MODEL`.
+A long-running daemon keeps the API client warm, so there's no Python startup on every keypress.
+
+| | Anthropic | NVIDIA |
+|---|---|---|
+| Explanations | `claude-sonnet-5-5` | `nvidia/llama-3.1-nemotron-70b-instruct` |
+| Fast suggestions (coming) | `claude-haiku-5-5` | `nv-mistralai/mistral-nemo-12b-instruct` |
+| Override with | `AIT_EXPLAIN_MODEL`, `AIT_SUGGEST_MODEL` | `AIT_NVIDIA_EXPLAIN_MODEL`, `AIT_NVIDIA_SUGGEST_MODEL` |
+
+Any model listed at `https://integrate.api.nvidia.com/v1/models` works for the NVIDIA overrides.
 
 **Privacy:** Only the command and a short context (OS, current folder, git branch) are sent. Anything that looks like a secret is replaced with `[REDACTED]` first (API keys, tokens, `password=…`, `user:pass@` URLs). Shell history is not sent.
 
