@@ -15,15 +15,15 @@ It never runs anything for you. It only fills in or explains your prompt.
 git clone https://github.com/thejunghare/ai-terminal.git ~/ai-terminal
 ~/ai-terminal/install.sh
 source ~/.zshrc
-ait key nvidia   # or: ait key anthropic — the key is stored in macOS Keychain
+ait key          # paste an NVIDIA (nvapi-…) or Anthropic (sk-ant-…) key; stored in macOS Keychain
 ```
 
 You need an API key from either provider:
 
 | Provider | Get a key | Command |
 |---|---|---|
-| **NVIDIA** (build.nvidia.com, free tier) | [build.nvidia.com](https://build.nvidia.com) → any model → *Get API Key* (starts with `nvapi-`) | `ait key nvidia` |
-| **Anthropic** (Claude) | [console.anthropic.com](https://console.anthropic.com) | `ait key anthropic` |
+| **NVIDIA** (build.nvidia.com, free tier) | [build.nvidia.com](https://build.nvidia.com) → any model → *Get API Key* (starts with `nvapi-`) | `ait key` |
+| **Anthropic** (Claude) | [console.anthropic.com](https://console.anthropic.com) | `ait key` |
 
 If you save both, Anthropic is used. To choose, put `export AIT_PROVIDER=nvidia` (or `anthropic`) above the `source` line in `~/.zshrc`.
 
@@ -42,7 +42,7 @@ Press `Ctrl+E`. The explanation prints above your prompt. If your cursor is in t
 | `ait explain <cmd>` | explain without the keybinding |
 | `ait status` | check the background daemon and which provider/model it uses |
 | `ait start` / `stop` / `restart` | manage the daemon (it auto-starts on first use) |
-| `ait key nvidia` / `ait key anthropic` | save an API key to Keychain |
+| `ait key` | save an API key to Keychain (provider detected from the key) |
 | `ait log` | show the daemon log |
 
 Set `AIT_EXPLAIN_KEY='^X^E'` before the `source` line to use a different key.

@@ -1,7 +1,7 @@
 # ai-terminal — AI help inside your normal zsh prompt.
 #
 #   Ctrl+E   on a typed command: explain it (first press still jumps to end of line)
-#   ait      helper command: ait start|stop|restart|status|key [anthropic|nvidia]|explain <cmd>|log
+#   ait      helper command: ait start|stop|restart|status|key|explain <cmd>|log
 #
 # Settings (set before sourcing):
 #   AIT_EXPLAIN_KEY   key binding for explain   (default: ^E)
@@ -101,17 +101,23 @@ ait() {
     status)  _ait_request ping "" ;;
     explain) shift; _ait_request explain "$*" ;;
     key)
-      local provider=${2:-anthropic} service label key
-      case $provider in
-        anthropic) service=ai-terminal;        label="Anthropic API key" ;;
-        nvidia)    service=ai-terminal-nvidia; label="NVIDIA API key (nvapi-...)" ;;
+      # The provider is taken from the key itself (nvapi-... is NVIDIA); the
+      # optional argument only matters for keys without a known prefix.
+      local provider=$2 key
+      read -rs "key?API key (Anthropic sk-ant-... or NVIDIA nvapi-...): "; print
+      [[ -n $key ]] || { print -u2 "No key entered."; return 1 }
+      case $key in
+        nvapi-*)  provider=nvidia ;;
+        sk-ant-*) provider=anthropic ;;
+      esac
+      case ${provider:-anthropic} in
+        anthropic) provider=anthropic; local service=ai-terminal ;;
+        nvidia)    local service=ai-terminal-nvidia ;;
         *)         print -u2 "usage: ait key [anthropic|nvidia]"; return 1 ;;
       esac
-      read -rs "key?$label: "; print
-      [[ -n $key ]] || return 1
       security add-generic-password -U -s $service -a "$USER" -w "$key" \
-        && print "Saved to Keychain (service: $service)." && _ait_daemon_stop ;;
+        && print "Saved $provider key to Keychain (service: $service)." && _ait_daemon_stop ;;
     log)     tail -n 50 ~/Library/Logs/ai-terminal.log ;;
-    *)       print "usage: ait start|stop|restart|status|key [anthropic|nvidia]|explain <command>|log" ;;
+    *)       print "usage: ait start|stop|restart|status|key|explain <command>|log" ;;
   esac
 }

@@ -58,19 +58,33 @@ def _api_key(provider: str) -> str | None:
         return None
 
 
+def _available_keys() -> dict[str, str]:
+    """Keys found, keyed by the provider they belong to.
+
+    The key's own prefix wins over the slot it was stored in, so an nvapi- key
+    saved under the Anthropic slot is still sent to NVIDIA.
+    """
+    found: dict[str, str] = {}
+    for slot in ("anthropic", "nvidia"):
+        if key := _api_key(slot):
+            found.setdefault("nvidia" if key.startswith("nvapi-") else slot, key)
+    return found
+
+
 def _provider() -> tuple[str, str]:
     """Returns (provider, api_key)."""
+    keys = _available_keys()
     forced = os.environ.get("AIT_PROVIDER", "").lower()
     if forced:
         if forced not in _KEY_SOURCES:
             raise LLMError(f"AIT_PROVIDER must be 'anthropic' or 'nvidia', not '{forced}'")
-        if key := _api_key(forced):
-            return forced, key
-        raise MissingKey(f"No {forced} API key. Run `ait key {forced}`.")
+        if forced in keys:
+            return forced, keys[forced]
+        raise MissingKey(f"No {forced} API key. Run `ait key`.")
     for provider in ("anthropic", "nvidia"):
-        if key := _api_key(provider):
-            return provider, key
-    raise MissingKey("No API key. Run `ait key anthropic` or `ait key nvidia`.")
+        if provider in keys:
+            return provider, keys[provider]
+    raise MissingKey("No API key. Run `ait key` and paste an Anthropic or NVIDIA key.")
 
 
 def active_provider() -> str:
