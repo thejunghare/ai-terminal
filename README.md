@@ -43,6 +43,7 @@ Press `Ctrl+E`. The explanation prints above your prompt. If your cursor is in t
 | `ait status` | check the background daemon and which provider/model it uses |
 | `ait start` / `stop` / `restart` | manage the daemon (it auto-starts on first use) |
 | `ait key` | save an API key to Keychain (provider detected from the key) |
+| `ait models` | test which NVIDIA models answer for your key, and how fast |
 | `ait log` | show the daemon log |
 
 Set `AIT_EXPLAIN_KEY='^X^E'` before the `source` line to use a different key.

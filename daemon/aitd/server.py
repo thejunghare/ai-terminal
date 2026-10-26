@@ -38,6 +38,8 @@ async def _read_request(reader: asyncio.StreamReader) -> list[str]:
 async def _dispatch(kind: str, cwd: str, payload: str) -> str:
     if kind == "ping":
         return f"pong {__version__} ({llm.active_provider()})"
+    if kind == "models":
+        return await llm.probe_nvidia_models()
     if kind == "explain":
         return await explain.explain(payload, cwd)
     raise ValueError(f"unknown request type: {kind}")

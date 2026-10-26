@@ -1,7 +1,7 @@
 # ai-terminal — AI help inside your normal zsh prompt.
 #
 #   Ctrl+E   on a typed command: explain it (first press still jumps to end of line)
-#   ait      helper command: ait start|stop|restart|status|key|explain <cmd>|log
+#   ait      helper command: ait start|stop|restart|status|key|models|explain <cmd>|log
 #
 # Settings (set before sourcing):
 #   AIT_EXPLAIN_KEY   key binding for explain   (default: ^E)
@@ -19,7 +19,7 @@ typeset -g AIT_ROOT=${0:A:h:h}
 typeset -g AIT_SOCK=${AIT_SOCK:-$HOME/.ai-terminal.sock}
 typeset -g AIT_PYTHON=${AIT_PYTHON:-$AIT_ROOT/.venv/bin/python}
 typeset -g AIT_EXPLAIN_KEY=${AIT_EXPLAIN_KEY:-'^E'}
-typeset -g AIT_TIMEOUT=${AIT_TIMEOUT:-30}
+typeset -g AIT_TIMEOUT=${AIT_TIMEOUT:-60}
 
 zmodload zsh/net/socket 2>/dev/null || { print -u2 "ai-terminal: zsh/net/socket unavailable"; return 1 }
 
@@ -117,7 +117,8 @@ ait() {
       esac
       security add-generic-password -U -s $service -a "$USER" -w "$key" \
         && print "Saved $provider key to Keychain (service: $service)." && _ait_daemon_stop ;;
+    models)  _ait_request models "" ;;
     log)     tail -n 50 ~/Library/Logs/ai-terminal.log ;;
-    *)       print "usage: ait start|stop|restart|status|key|explain <command>|log" ;;
+    *)       print "usage: ait start|stop|restart|status|key|models|explain <command>|log" ;;
   esac
 }
