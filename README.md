@@ -2,7 +2,7 @@
 
 AI help inside your **native macOS terminal** (Terminal.app or iTerm2). It's a zsh plugin, not a new app.
 
-- **Explain** any command before you run it: press `Ctrl+E` twice
+- **Explain** any command before you run it: press `Ctrl+E`
 - *(coming)* English → command with `Ctrl+G`
 - *(coming)* inline ghost-text suggestions as you type
 - *(coming)* `why` explains your last failed command
@@ -26,7 +26,7 @@ Type a command and **don't press Enter**:
 ❯ find . -name '*.log' -mtime +7 -delete
 ```
 
-Press `Ctrl+E`. The first press jumps to the end of the line, as it normally does. Press it again and the explanation prints above your prompt. The command you typed stays where it was.
+Press `Ctrl+E`. The explanation prints above your prompt. If your cursor is in the middle of the line, the first press jumps to the end, as `Ctrl+E` normally does; press it again to explain. The command you typed stays where it was.
 
 | Command | What it does |
 |---|---|
