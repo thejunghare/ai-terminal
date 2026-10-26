@@ -82,7 +82,7 @@ _ait_explain_widget() {
   if out=$(_ait_request explain "$BUFFER"); then
     _ait_print_above $'\n'"$out"$'\n'
   else
-    _ait_print_above $'\n\e[31m'"${out#ERR: }"$'\e[0m'
+    _ait_print_above $'\n\e[31m'"${out#ERR: }"$'\e[0m\n'
   fi
   zle -M ""
 }

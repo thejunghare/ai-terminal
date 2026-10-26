@@ -20,12 +20,27 @@ MODELS = {
         "suggest": os.environ.get("AIT_SUGGEST_MODEL", "claude-haiku-5-5"),
     },
     "nvidia": {
-        "explain": os.environ.get("AIT_NVIDIA_EXPLAIN_MODEL", "nvidia/llama-3.1-nemotron-70b-instruct"),
-        "suggest": os.environ.get("AIT_NVIDIA_SUGGEST_MODEL", "nv-mistralai/mistral-nemo-12b-instruct"),
+        "explain": os.environ.get("AIT_NVIDIA_EXPLAIN_MODEL", "deepseek-ai/deepseek-v4.1-flash"),
+        "suggest": os.environ.get("AIT_NVIDIA_SUGGEST_MODEL", "deepseek-ai/deepseek-v4.1-flash"),
     },
 }
 
 NVIDIA_BASE_URL = os.environ.get("AIT_NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1")
+
+# build.nvidia.com lists models that a given account can't call (HTTP 404
+# "Function ... Not found for account"). When that happens we try these in order.
+NVIDIA_FALLBACK_MODELS = [
+    "deepseek-ai/deepseek-v4.1-flash",
+    "openai/gpt-oss-20b",
+    "z-ai/glm-5.3-flash",
+    "nvidia/nemotron-3-super-120b-a12b",
+    "nv-mistralai/mistral-nemo-12b-instruct",
+]
+# Reasoning models spend tokens thinking before they answer, so allow more.
+NVIDIA_MAX_TOKENS = 4096
+
+# Model actually answering per task, once a fallback has been needed.
+_resolved_nvidia: dict[str, str] = {}
 
 _KEY_SOURCES = {
     "anthropic": ("ANTHROPIC_API_KEY", "ai-terminal"),
@@ -93,7 +108,8 @@ def active_provider() -> str:
         provider, _ = _provider()
     except (MissingKey, LLMError) as e:
         return f"no provider: {e}"
-    return f"{provider}, explain model {MODELS[provider]['explain']}"
+    model = _resolved_nvidia.get("explain") if provider == "nvidia" else None
+    return f"{provider}, explain model {model or MODELS[provider]['explain']}"
 
 
 _clients: dict[str, object] = {}
@@ -114,16 +130,20 @@ async def _anthropic(key: str, model: str, system: str, user: str, max_tokens: i
     return "".join(b.text for b in resp.content if b.type == "text")
 
 
-async def _nvidia(key: str, model: str, system: str, user: str, max_tokens: int) -> str:
+class _ModelUnavailable(LLMError):
+    pass
+
+
+async def _nvidia_call(key: str, model: str, system: str, user: str) -> str:
     client = _clients.get("nvidia") or _clients.setdefault(
-        "nvidia", httpx.AsyncClient(base_url=NVIDIA_BASE_URL, timeout=60))
+        "nvidia", httpx.AsyncClient(base_url=NVIDIA_BASE_URL, timeout=90))
     try:
         resp = await client.post(
             "/chat/completions",
             headers={"Authorization": f"Bearer {key}"},
             json={
                 "model": model,
-                "max_tokens": max_tokens,
+                "max_tokens": NVIDIA_MAX_TOKENS,
                 "temperature": 0.2,
                 "messages": [
                     {"role": "system", "content": system},
@@ -138,14 +158,40 @@ async def _nvidia(key: str, model: str, system: str, user: str, max_tokens: int)
             detail = resp.json().get("detail") or resp.json().get("error") or resp.text
         except ValueError:
             detail = resp.text
-        raise LLMError(f"NVIDIA API error {resp.status_code}: {str(detail)[:300]}")
-    return resp.json()["choices"][0]["message"].get("content") or ""
+        msg = f"NVIDIA API error {resp.status_code} ({model}): {str(detail)[:200]}"
+        if resp.status_code == 404:
+            raise _ModelUnavailable(msg)
+        raise LLMError(msg)
+    content = resp.json()["choices"][0]["message"].get("content") or ""
+    if not content.strip():
+        raise LLMError(f"NVIDIA model {model} returned an empty answer.")
+    return content
+
+
+async def _nvidia(key: str, task: str, system: str, user: str) -> str:
+    preferred = _resolved_nvidia.get(task, MODELS["nvidia"][task])
+    candidates = [preferred] + [m for m in NVIDIA_FALLBACK_MODELS if m != preferred]
+    tried = []
+    for model in candidates:
+        try:
+            text = await _nvidia_call(key, model, system, user)
+        except _ModelUnavailable:
+            tried.append(model)
+            continue
+        _resolved_nvidia[task] = model
+        return text
+    raise LLMError(
+        "None of these NVIDIA models are available to your account: "
+        + ", ".join(tried)
+        + ". Pick one from build.nvidia.com and set AIT_NVIDIA_EXPLAIN_MODEL."
+    )
 
 
 async def complete(task: str, system: str, user: str, max_tokens: int = 600) -> str:
     """Run one prompt for `task` ("explain" or "suggest") on the configured provider."""
     provider, key = _provider()
-    model = MODELS[provider][task]
-    call = _anthropic if provider == "anthropic" else _nvidia
-    text = await call(key, model, system, user, max_tokens)
+    if provider == "anthropic":
+        text = await _anthropic(key, MODELS["anthropic"][task], system, user, max_tokens)
+    else:
+        text = await _nvidia(key, task, system, user)
     return _THINK.sub("", text).strip()
