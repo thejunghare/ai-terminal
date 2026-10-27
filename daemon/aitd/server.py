@@ -17,7 +17,7 @@ from . import __version__, explain, generate, llm, suggest, why
 SOCK_PATH = os.environ.get("AIT_SOCK", os.path.expanduser("~/.ai-terminal.sock"))
 PID_PATH = SOCK_PATH + ".pid"
 LOG_PATH = os.path.expanduser("~/Library/Logs/ai-terminal.log")
-MAX_REQUEST = 64 * 1024
+MAX_REQUEST = 256 * 1024
 
 log = logging.getLogger("aitd")
 
@@ -82,7 +82,11 @@ async def _handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) ->
 async def _serve() -> None:
     if os.path.exists(SOCK_PATH):
         os.unlink(SOCK_PATH)
-    server = await asyncio.start_unix_server(_handle, path=SOCK_PATH)
+    old_umask = os.umask(0o077)          # socket is private from the moment it exists
+    try:
+        server = await asyncio.start_unix_server(_handle, path=SOCK_PATH)
+    finally:
+        os.umask(old_umask)
     os.chmod(SOCK_PATH, 0o600)
     with open(PID_PATH, "w") as f:      # lets `ait stop` stop exactly this daemon
         f.write(str(os.getpid()))

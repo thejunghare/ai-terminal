@@ -13,7 +13,13 @@ _SECRET_PATTERNS = [
     (re.compile(r"AKIA[0-9A-Z]{16}"), "[REDACTED]"),                     # AWS access key ids
     (re.compile(r"xox[baprs]-[A-Za-z0-9\-]{10,}"), "[REDACTED]"),        # Slack tokens
     (re.compile(r"eyJ[\w\-]{10,}\.[\w\-]{10,}\.[\w\-]+"), "[REDACTED]"),  # JWTs
-    (re.compile(r"""(?i)\b((?:password|passwd|secret|token|api[_-]?key)\s*[=:]\s*)[^\s"']+"""), r"\1[REDACTED]"),
+    (re.compile(r"AIza[0-9A-Za-z_\-]{35}"), "[REDACTED]"),                # Google API keys
+    (re.compile(r"\b[rs]k_(?:live|test)_[A-Za-z0-9]{16,}"), "[REDACTED]"),  # Stripe keys
+    (re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?(?:-----END [A-Z ]*PRIVATE KEY-----|\Z)",
+                re.DOTALL), "[REDACTED]"),
+    # KEY=value where the name mentions a secret, also inside longer names (AWS_SECRET_ACCESS_KEY=)
+    (re.compile(r"""(?i)((?:password|passwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|credential)"""
+                r"""[A-Za-z0-9_]*["']?\s*[=:]\s*["']?)[^\s"']+"""), r"\1[REDACTED]"),
     (re.compile(r"""(?i)(--password[= ])[^\s"']+"""), r"\1[REDACTED]"),
     (re.compile(r"""(?i)(authorization:\s*(?:bearer|basic)\s+)[^\s"']+"""), r"\1[REDACTED]"),
     (re.compile(r"(://[^:/\s@]+:)[^@\s]+(@)"), r"\1[REDACTED]\2"),    # user:pass@host in URLs

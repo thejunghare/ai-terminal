@@ -40,9 +40,10 @@ def output_of(command: str, screen: str) -> str:
     if first:
         for i in range(len(lines) - 1, -1, -1):
             if lines[i].rstrip().endswith(first):     # prompt + command line
-                lines = lines[i + 1:]
-                break
-    return _tail("\n".join(lines))
+                return _tail("\n".join(lines[i + 1:]))
+    # Not on screen (scrolled away, or another window is in front): send nothing
+    # rather than unrelated text.
+    return ""
 
 
 def _tail(text: str) -> str:

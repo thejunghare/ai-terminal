@@ -62,6 +62,10 @@ _KEY_SOURCES = {
 
 # Reasoning models may prepend their chain of thought; the terminal only wants the answer.
 _THINK = re.compile(r"<think>.*?</think>\s*", re.DOTALL)
+# Control characters other than newline and tab. Model output is printed to the terminal,
+# and text the model read (e.g. screen output for `why`) must not smuggle in escape
+# sequences that retitle the window, write the clipboard or fake a prompt.
+_CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
 
 
 class MissingKey(RuntimeError):
@@ -261,4 +265,4 @@ async def complete(task: str, system: str, user: str, max_tokens: int = 600) -> 
         text = await _anthropic(key, model, system, user, max_tokens)
     else:
         text, model = await _nvidia(key, task, system, user)
-    return _THINK.sub("", text).strip(), model
+    return _CONTROL.sub("", _THINK.sub("", text)).strip(), model

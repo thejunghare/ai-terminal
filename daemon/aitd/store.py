@@ -30,6 +30,7 @@ class DiskCache:
             self._data.popitem(last=False)
         try:
             os.makedirs(CACHE_DIR, mode=0o700, exist_ok=True)
+            os.chmod(CACHE_DIR, 0o700)
             tmp = self.path + ".tmp"
             with open(tmp, "w") as f:
                 json.dump(self._data, f)
