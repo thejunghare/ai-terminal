@@ -102,12 +102,12 @@ _ait_explain_widget() {
     zle -F $_ait_explain_fd 2>/dev/null; exec {_ait_explain_fd}<&-
   fi
   if ! _ait_send "explain:${COLUMNS:-80}" "$BUFFER" start; then
-    zle -M "ai-terminal: cannot reach the daemon (try: ait restart)"
+    zle -M "Can't reach ai-terminal. Try: ait restart"
     return
   fi
   _ait_explain_fd=$REPLY
   zle -F -w $_ait_explain_fd _ait_explain_ready
-  zle -M "⏳ explaining… keep typing if you like, the answer will appear above"
+  zle -M "Explaining…"
 }
 
 _ait_explain_ready() {
@@ -118,9 +118,9 @@ _ait_explain_ready() {
   _ait_explain_fd=0
   zle -M ""
   if [[ -z $out ]]; then
-    _ait_print_above $'\n\e[31m'"ai-terminal: no answer (the daemon may have restarted)"$'\e[0m\n'
+    _ait_print_above $'\n  \e[33m'"No answer. The daemon may have restarted."$'\e[0m\n'
   elif [[ $out == ERR:* ]]; then
-    _ait_print_above $'\n\e[31m'"${out#ERR: }"$'\e[0m\n'
+    _ait_print_above $'\n  \e[33m'"${out#ERR: }"$'\e[0m\n'
   else
     _ait_print_above $'\n'"$out"$'\n'
   fi

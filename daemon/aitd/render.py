@@ -1,4 +1,9 @@
-"""Turns the model's SUMMARY/PART/WARN/TIP lines into a framed, coloured terminal block."""
+"""Turns the model's SUMMARY/PART/WARN/TIP lines into a quiet, native-looking block.
+
+Design: no frames, titles or emoji. Hierarchy comes from weight and dimming in the
+terminal's own palette (like primary/secondary labels); the only colour is the
+warning, so it stands out when it matters.
+"""
 import os
 import re
 import textwrap
@@ -9,18 +14,16 @@ _ANSI = re.compile(r"\033\[[0-9;]*m")
 
 RESET = "\033[0m"
 STYLE = {
-    "border": "\033[2m",            # dim
-    "title": "\033[2;3m",           # dim italic
-    "command": "\033[1;36m",        # bold cyan
-    "summary": "\033[1m",           # bold
-    "part": "\033[32m",             # green
-    "warn": "\033[1;33m",           # bold yellow
-    "tip": "\033[35m",              # magenta
+    "primary": "\033[1m",      # bold: the one-line summary, command pieces
+    "secondary": "\033[2m",    # dim: meanings, tips
+    "warning": "\033[33m",     # the terminal's yellow/orange
 }
+INDENT = "  "
+GAP = "   "                    # between a command piece and its meaning
 
 
 def _width(text: str) -> int:
-    """Display width: ignores colour codes, counts wide characters (emoji, CJK) as two."""
+    """Display width: ignores colour codes, counts wide characters as two columns."""
     return sum(2 if unicodedata.east_asian_width(c) in "WF" else 1 for c in _ANSI.sub("", text))
 
 
@@ -38,7 +41,7 @@ def _parse(raw: str) -> dict:
             out["summary"] = body
         elif kind == "PART":
             piece, _, meaning = body.partition("::")
-            out["parts"].append((piece.strip().strip("`"), meaning.strip()))
+            out["parts"].append((piece.strip().strip("`"), meaning.strip().rstrip(".")))
         elif kind == "WARN":
             out["warn"].append(body)
         elif kind == "TIP":
@@ -52,48 +55,39 @@ def render(command: str, raw: str, cols: int = 80, model: str = "") -> str:
     def c(style: str, text: str) -> str:
         return f"{STYLE[style]}{text}{RESET}" if color and text else text
 
-    cols = max(40, min(cols or 80, 110))
-    inner = cols - 4                      # "│ " on the left, a margin on the right
+    cols = max(40, min(cols or 80, 100))
+    width = cols - len(INDENT) - 2
     data = _parse(raw)
-    rows: list[str] = []
+    out: list[str] = []
 
-    def add(text: str = "", style: str | None = None, indent: str = "", first: str = "") -> None:
-        if not text:
-            rows.append("")
-            return
-        wrapped = textwrap.wrap(text, width=inner - _width(first or indent),
-                                break_long_words=True, break_on_hyphens=False) or [""]
-        for i, chunk in enumerate(wrapped):
-            lead = first if i == 0 and first else indent
-            rows.append(lead + (c(style, chunk) if style else chunk))
+    def para(text: str, style: str | None = None, lead: str = INDENT, hang: str = INDENT) -> None:
+        avail = width - (_width(lead) - len(INDENT))
+        for i, chunk in enumerate(textwrap.wrap(text, avail, break_on_hyphens=False) or [""]):
+            out.append((lead if i == 0 else hang) + (c(style, chunk) if style else chunk))
 
-    add(command, "command", indent="  ")
-    rows.append("")
     if data["summary"]:
-        add(data["summary"], "summary")
-    if data["parts"]:
-        rows.append("")
-        name_w = min(max(_width(p) for p, _ in data["parts"]), inner // 2)
-        for piece, meaning in data["parts"]:
-            if _width(piece) > name_w:     # long piece: own line, meaning below
-                add(piece, "part", indent="  ")
-                add(meaning, indent="  " + " " * (name_w + 3))
-            else:
-                pad = " " * (name_w - _width(piece))
-                add(meaning, first="  " + c("part", piece) + pad + "   ",
-                    indent="  " + " " * (name_w + 3))
-    if not data["summary"] and not data["parts"]:
-        for line in data["other"]:            # model ignored the format: show it as-is
-            add(line)
-    for w in data["warn"]:
-        rows.append("")
-        add(w, "warn", first="⚠  ", indent="   ")
-    for t in data["tip"]:
-        rows.append("")
-        add(t, "tip", first="›  ", indent="   ")
+        para(data["summary"], "primary")
 
-    title = " explain " + (f"· {model} " if model else "")
-    lines = [c("border", "╭─") + c("title", title) + c("border", "─" * max(0, cols - 2 - _width(title)))]
-    lines += [c("border", "│ ") + r for r in rows]
-    lines.append(c("border", "╰" + "─" * (cols - 1)))
-    return "\n".join(lines)
+    if data["parts"]:
+        out.append("")
+        name_w = min(max(_width(p) for p, _ in data["parts"]), width // 2)
+        hang = INDENT + " " * name_w + GAP
+        for piece, meaning in data["parts"]:
+            if _width(piece) > name_w:              # long piece gets its own line
+                para(piece)
+                para(meaning, "secondary", lead=hang, hang=hang)
+            else:
+                lead = INDENT + piece + " " * (name_w - _width(piece)) + GAP
+                para(meaning, "secondary", lead=lead, hang=hang)
+
+    if not data["summary"] and not data["parts"]:  # model ignored the format
+        for line in data["other"]:
+            para(line)
+
+    notes = [(w, "warning", "⚠︎ ") for w in data["warn"]] + [(t, "secondary", "") for t in data["tip"]]
+    if notes:
+        out.append("")
+        for text, style, mark in notes:
+            para(mark + text, style)
+
+    return "\n".join(out)

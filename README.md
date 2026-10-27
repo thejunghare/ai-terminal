@@ -49,21 +49,18 @@ Type a command and **don't press Enter**:
 Press `Ctrl+E`:
 
 ```
-╭─ explain · openai/gpt-oss-20b ─────────────────────────────
-│   find . -name '*.log' -mtime +7 -delete
-│
-│ Deletes every .log file older than 7 days under this folder.
-│
-│   find .          search starting in the current directory
-│   -name '*.log'   only files whose name ends in .log
-│   -mtime +7       last modified more than 7 days ago
-│   -delete         delete each match immediately
-│
-│ ⚠  Irreversible: matching files skip the Trash.
-│
-│ ›  Run it once without -delete to preview the matches.
-╰────────────────────────────────────────────────────────────
+  Deletes .log files older than 7 days in this folder and below.
+
+  find .          Search from the current folder
+  -name '*.log'   Only files ending in .log
+  -mtime +7       Modified more than 7 days ago
+  -delete         Delete each match without asking
+
+  ⚠︎ Deleted files skip the Trash and can't be recovered.
+  Run it without -delete first to preview the matches.
 ```
+
+The summary is bold, meanings are dimmed, and only warnings use colour, all in your terminal's own theme (set `NO_COLOR=1` for none).
 
 If your cursor is in the middle of the line, the first press jumps to the end, as `Ctrl+E` normally does; press it again to explain. Explanations are cached on disk, so asking again is instant.
 
