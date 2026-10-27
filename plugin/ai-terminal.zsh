@@ -1,10 +1,10 @@
-# ai-terminal — AI help inside your normal zsh prompt.
+# Intelligence in Terminal (ai-terminal): SI help inside your normal zsh prompt.
 #
 #   typing   grey "ghost" suggestion after the cursor: from your history instantly,
-#            from the AI after a short pause.  → or End accepts it.
+#            from the SI after a short pause.  → or End accepts it.
 #   Ctrl+E   on a typed command: explain it (first press still jumps to end of line).
 #            You can keep typing while it works; the answer prints above the prompt.
-#   # ...    type a request in plain English after #, press Return: the AI writes the
+#   # ...    type a request in plain English after #, press Return: the SI writes the
 #            command. Safe ones run straight away; risky ones ask "Run it? y/n" first.
 #            Ctrl+G does the same for any line without the #.
 #   why      after a command fails: explains why, and puts the likely fix on the prompt.
@@ -14,11 +14,11 @@
 # Settings (set before sourcing):
 #   AIT_EXPLAIN_KEY     key binding for explain              (default: ^E)
 #   AIT_SUGGEST         1 = show ghost suggestions           (default: 1)
-#   AIT_AI_SUGGEST      1 = ask the AI when history has none (default: 1)
-#   AIT_SUGGEST_DELAY   pause in seconds before asking the AI (default: 0.8)
+#   AIT_AI_SUGGEST      1 = ask the SI when history has none (default: 1)
+#   AIT_SUGGEST_DELAY   pause in seconds before asking the SI (default: 0.8)
 #   AIT_SUGGEST_STYLE   highlight for the ghost text          (default: fg=8)
 #   AIT_WHY_SCREEN      1 = `why` reads the end of the terminal screen  (default: 1)
-#   AIT_CONFIRM         risky = run safe AI commands at once, ask y/n for risky ones;
+#   AIT_CONFIRM         risky = run safe SI commands at once, ask y/n for risky ones;
 #                       all = always ask                      (default: risky)
 #   AIT_SOCK            daemon socket path                   (default: ~/.ai-terminal.sock)
 #   AIT_PROVIDER        anthropic | nvidia                   (default: whichever has a key)
@@ -162,8 +162,8 @@ zle -N _ait_explain_ready
 bindkey "$AIT_EXPLAIN_KEY" ait-explain
 
 # --- ask in plain English: "# request" + Return, or Ctrl+G --------------------
-# The AI's command replaces the line. Safe commands run at once; risky ones (and
-# every command with AIT_CONFIRM=all) wait for y. Questions back from the AI never run.
+# The SI's command replaces the line. Safe commands run at once; risky ones (and
+# every command with AIT_CONFIRM=all) wait for y. Questions back from the SI never run.
 # This waits in place (you just pressed Return and want the result); Ctrl+C or Esc cancels.
 
 _ait_run_line() {
@@ -212,15 +212,15 @@ _ait_generate_start() {
   local took=$REPLY
   BUFFER=$cmd
   CURSOR=${#BUFFER}
-  _ait_seen=$BUFFER                                # no ghost over the AI's command
+  _ait_seen=$BUFFER                                # no ghost over the SI's command
 
-  if [[ $cmd == \#* ]]; then                       # the AI is asking for more detail
+  if [[ $cmd == \#* ]]; then                       # the SI is asking for more detail
     zle -M "Needs more detail. Edit the line and press Return.  $took"
     return
   fi
   if [[ -z $risk && $AIT_CONFIRM != all ]]; then
     zle -M ""
-    _ait_print_above $'  \e[2m'"AI · $took"$'\e[0m'
+    _ait_print_above $'  \e[2m'"SI · $took"$'\e[0m'
     _ait_run_line
     return
   fi

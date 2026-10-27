@@ -49,7 +49,7 @@ async def generate(request: str, cwd: str) -> str:
     command = (m.group(1) if m else answer.strip().splitlines()[0] if answer.strip() else "")
     command = command.strip().strip("`").strip()
     if not command:
-        return "ERR: The AI didn't return a command. Try rephrasing."
+        return "ERR: The SI didn't return a command. Try rephrasing."
     r = _RISK.search(answer)
     risk = r.group(1).strip() if r else ""
     if risk.lower().rstrip(".") in ("none", "no", "n/a", ""):

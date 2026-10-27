@@ -1,4 +1,4 @@
-# ai-terminal for bash: SI help inside your normal bash prompt.
+# Intelligence in Terminal (ai-terminal) for bash: SI help inside your normal bash prompt.
 #
 #   # ...    type a request in plain English after #, press Return: the SI writes the
 #            command. Safe ones run straight away; risky ones ask "Run it? y/n" first.
