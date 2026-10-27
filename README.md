@@ -1,77 +1,27 @@
+<div align="center">
+
 # ai-terminal
 
-AI help inside your **native macOS terminal** (Terminal.app or iTerm2). It's a zsh plugin, not a new app.
+**AI in the terminal you already have.**
 
-- **Suggestions as you type**: grey "ghost" text after the cursor, from your history instantly and from the AI after a short pause. Press `→` to accept.
-- **Ask in plain English**: type `# make a new folder here` and press Return. Safe commands run right away; risky ones ask `y/n` first.
-- **Explain** any command before you run it: press `Ctrl+E`. You can keep typing; the breakdown appears above your prompt.
-- *(coming)* `why` explains your last failed command
+Suggestions as you type, plain-English commands and instant explanations,<br>
+inside macOS Terminal and iTerm2. No new app, no subscription.
 
-It never runs anything for you. It only fills in or explains your prompt.
+[![CI](https://github.com/thejunghare/ai-terminal/actions/workflows/ci.yml/badge.svg)](https://github.com/thejunghare/ai-terminal/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![macOS](https://img.shields.io/badge/macOS-zsh-black?logo=apple)
+[![GitHub stars](https://img.shields.io/github/stars/thejunghare/ai-terminal?style=social)](https://github.com/thejunghare/ai-terminal/stargazers)
+[![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-FFDD00?logo=buymeacoffee&logoColor=black)](https://www.buymeacoffee.com/thejunghare)
 
-## Install
-
-```bash
-git clone https://github.com/thejunghare/ai-terminal.git ~/ai-terminal
-~/ai-terminal/install.sh
-source ~/.zshrc
-ait key          # paste an NVIDIA (nvapi-…) or Anthropic (sk-ant-…) key; stored in macOS Keychain
-```
-
-You need an API key from either provider:
-
-| Provider | Get a key | Command |
-|---|---|---|
-| **NVIDIA** (build.nvidia.com, free tier) | [build.nvidia.com](https://build.nvidia.com) → any model → *Get API Key* (starts with `nvapi-`) | `ait key` |
-| **Anthropic** (Claude) | [console.anthropic.com](https://console.anthropic.com) | `ait key` |
-
-If you save both, Anthropic is used. To choose, put `export AIT_PROVIDER=nvidia` (or `anthropic`) above the `source` line in `~/.zshrc`.
-
-## Use
-
-### Ask in plain English
-
-Start the line with `#`, say what you want, and press Return:
+</div>
 
 ```
-% # make a new folder in here
+% # make a new folder for my notes
   AI · 1.4s
-% mkdir -p new-folder
-```
+% mkdir -p notes
 
-The AI writes the command and checks its risk:
+% find . -name '*.log' -mtime +7 -delete        ← press Ctrl+E
 
-- **Safe commands run straight away**, with the response time shown above.
-- **Risky commands ask first.** Deleting, overwriting, `sudo`, recursive permission changes, stopping processes and running downloaded scripts show the reason and wait for you:
-  ```
-  % rm old.txt
-  ⚠︎ Deletes files. They skip the Trash. Run it? y/n  1.2s
-  ```
-  `y` runs it; any other key leaves it on the line, not run, for you to edit.
-- **If the request is unclear**, the AI asks back with a `#` line, which never runs.
-
-The risk check also runs locally, so it doesn't rely on the AI flagging it. `Ctrl+C` or `Esc` cancels while it's thinking. `Ctrl+G` does the same for a line without the `#`. To be asked about every command, set `AIT_CONFIRM=all`.
-
-### Suggestions
-
-Start typing. If you've run a matching command before, the rest of it appears in grey straight away. Otherwise, after you pause for a moment, the AI suggests a completion.
-
-| Key | Does |
-|---|---|
-| `→` / `End` / `Ctrl+F` | accept the suggestion (when the cursor is at the end of the line) |
-| keep typing | the suggestion updates or disappears |
-
-### Explain
-
-Type a command and **don't press Enter**:
-
-```
-❯ find . -name '*.log' -mtime +7 -delete
-```
-
-Press `Ctrl+E`:
-
-```
   Deletes .log files older than 7 days in this folder and below.
 
   find .          Search from the current folder
@@ -80,56 +30,160 @@ Press `Ctrl+E`:
   -delete         Delete each match without asking
 
   ⚠︎ Deleted files skip the Trash and can't be recovered.
-  Run it without -delete first to preview the matches.
+  1.8s
+
+% git sta▍tus                                   ← grey suggestion, press → to accept
 ```
 
-The summary is bold, meanings are dimmed, and only warnings use colour, all in your terminal's own theme (set `NO_COLOR=1` for none).
+---
 
-The response time is shown underneath. If your cursor is in the middle of the line, the first press jumps to the end, as `Ctrl+E` normally does; press it again to explain. Explanations are cached on disk, so asking again is instant.
+## Why I built this
 
-### Commands
+The first time I saw AI inside a terminal was in **Warp**, and it felt like the obvious future: ask in plain English, get the command, understand what it does. But the full experience sat behind a paid plan, which was out of my reach. It also meant installing a whole new terminal app, when macOS already ships a terminal that does everything right.
+
+**We already had a terminal. We just needed AI in it.**
+
+I also teach Linux and Bash commands to students at **School of Future Tech**. We live in the terminal every class: installing tools, moving around folders, running commands for the first time. Having suggestions, explanations and plain-English help **right inside the terminal they already use** turned out to be a huge plus. Students see what a command does *before* they run it, and nothing risky runs without asking.
+
+So ai-terminal is a small, free, open-source zsh plugin. Bring your own API key (NVIDIA's is free), and your existing terminal gets smarter.
+
+## Features
+
+| | |
+|---|---|
+| **Ask in plain English** | Type `# make a new folder here` and press Return. Safe commands run straight away; risky ones ask `y/n` first. |
+| **Suggestions as you type** | Grey ghost text after the cursor: from your history instantly, from the AI after a short pause. Press `→` to accept. |
+| **Explain any command** | Press `Ctrl+E` before running something. A quiet, native-looking breakdown appears above your prompt, and you can keep typing while it loads. |
+| **Safety first** | A local risk check flags deletes, overwrites, `sudo`, recursive permission changes, stopping processes and `curl \| sh`, whatever the AI says. |
+| **Private by design** | API key in the macOS Keychain, secrets redacted before anything leaves your Mac, shell history never sent. |
+| **Fast** | A small background daemon keeps connections warm, answers are cached on disk, and stale requests are cancelled as you type. |
+| **Free to run** | Works with a free [NVIDIA](https://build.nvidia.com) key, or with [Anthropic](https://console.anthropic.com) (Claude) for the fastest answers. |
+
+## Quick start
+
+**Requirements:** macOS, zsh (the default shell), Python 3.10+.
+
+```bash
+git clone https://github.com/thejunghare/ai-terminal.git ~/ai-terminal
+~/ai-terminal/install.sh
+```
+
+Open a new terminal tab, then save an API key (it goes into the macOS Keychain):
+
+```bash
+ait key
+```
+
+| Provider | Get a key | Notes |
+|---|---|---|
+| **NVIDIA** | [build.nvidia.com](https://build.nvidia.com) → any model → *Get API Key* (`nvapi-…`) | Free tier |
+| **Anthropic** | [console.anthropic.com](https://console.anthropic.com) (`sk-ant-…`) | Fastest answers |
+
+`ait key` detects the provider from the key. Check it worked:
+
+```bash
+ait status
+```
+
+> **Terminal.app shows a `$` prompt instead of `%`?** It's running bash. Switch to zsh in *Terminal → Settings → General → Shells open with → Default login shell*.
+
+## Usage
+
+### Ask in plain English
+
+Start a line with `#`, say what you want, press Return:
+
+```
+% # show the 5 biggest files in here
+  AI · 1.6s
+% du -ah . | sort -rh | head -5
+```
+
+Risky commands wait for you:
+
+```
+% rm -r old-builds
+⚠︎ Deletes files. They skip the Trash. Run it? y/n  1.2s
+```
+
+`y` runs it; any other key leaves it on the line, unrun, for you to edit. `Ctrl+C` or `Esc` cancels while it's thinking, and `Ctrl+G` works on a line without the `#`.
+
+### Suggestions
+
+Just type. A matching command from your history appears in grey immediately; otherwise the AI suggests one after a short pause. `→`, `End` or `Ctrl+F` accepts it, and typing anything else ignores it.
+
+### Explain
+
+Type a command, **don't press Enter**, press `Ctrl+E`. If the cursor is mid-line, the first press jumps to the end (as `Ctrl+E` normally does) and the second explains.
+
+### The `ait` command
 
 | Command | What it does |
 |---|---|
-| `ait explain <cmd>` | explain without the keybinding |
-| `ait suggest on` / `history` / `off` | AI + history suggestions / history only / none (this session) |
-| `ait status` | check the background daemon and which provider/model it uses |
-| `ait start` / `stop` / `restart` | manage the daemon (it starts automatically) |
-| `ait key` | save an API key to Keychain (provider detected from the key) |
-| `ait models` | test which NVIDIA models answer for your key, and how fast |
-| `ait log` | show the daemon log |
+| `ait key` | Save an API key to the Keychain |
+| `ait status` | Show the daemon, provider and model |
+| `ait models` | Test which NVIDIA models answer for your key, and how fast |
+| `ait suggest on` / `history` / `off` | AI + history suggestions, history only, or none |
+| `ait explain <cmd>` | Explain without the key binding |
+| `ait start` / `stop` / `restart` | Manage the background daemon (it starts automatically) |
+| `ait log` | Show the daemon log |
 
-### Settings
+## Configuration
 
-Put these above the `source` line in `~/.zshrc`:
+Add any of these above the `source` line in `~/.zshrc`:
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `AIT_EXPLAIN_KEY` | `^E` | key binding for explain, e.g. `'^X^E'` |
+| `AIT_CONFIRM` | `risky` | `all` asks before running every AI-written command |
 | `AIT_SUGGEST` | `1` | `0` turns ghost suggestions off |
 | `AIT_AI_SUGGEST` | `1` | `0` keeps suggestions to your history only |
-| `AIT_SUGGEST_DELAY` | `0.8` | seconds of pause before asking the AI |
-| `AIT_SUGGEST_STYLE` | `fg=8` | how the ghost text is drawn |
-| `AIT_CONFIRM` | `risky` | `all` asks before running every AI-written command |
+| `AIT_SUGGEST_DELAY` | `0.8` | Seconds of pause before asking the AI |
+| `AIT_SUGGEST_STYLE` | `fg=8` | How ghost text is drawn, e.g. `fg=240` for fainter |
+| `AIT_EXPLAIN_KEY` | `^E` | Key binding for explain, e.g. `'^X^E'` |
+| `AIT_PROVIDER` | auto | `anthropic` or `nvidia` when you've saved both |
+| `AIT_NVIDIA_EXPLAIN_MODEL` | `openai/gpt-oss-20b` | Any model from `ait models` |
+| `NO_COLOR` | unset | `1` for output without colour |
+
+## Privacy & safety
+
+- **What's sent:** only the line you're working on, plus a short context (macOS version, current folder, git branch).
+- **Redacted first:** API keys, tokens, `password=…` and `user:pass@` URLs become `[REDACTED]`; lines containing them never get AI suggestions.
+- **Never sent:** your shell history (used locally for suggestions only) and your files.
+- **Never auto-run when risky:** the local risk check can't be skipped by the AI.
+- **Keys:** stored in the macOS Keychain. Cached answers live in `~/.cache/ai-terminal/`.
+
+See [SECURITY.md](SECURITY.md) for details and how to report a vulnerability.
 
 ## How it works
 
 ```
-zsh (ai-terminal.zsh) ──Unix socket──▶ aitd (Python daemon) ──▶ Claude API or NVIDIA API
+zsh plugin  ──Unix socket──▶  aitd (Python daemon)  ──HTTPS──▶  NVIDIA or Anthropic API
+(keys, ghost text, prompts)    (prompts, redaction, cache, risk check)
 ```
 
-A long-running daemon keeps the API client warm, so there's no Python startup on every keypress. The shell talks to it asynchronously, so typing never waits on the network. When you keep typing, the daemon cancels the now-stale suggestion request.
-
-| | Anthropic | NVIDIA |
-|---|---|---|
-| Explanations | `claude-sonnet-5-5` | `openai/gpt-oss-20b` (falls back to other models if your account can't use it) |
-| Suggestions | `claude-haiku-5-5` | `openai/gpt-oss-20b` |
-| Override with | `AIT_EXPLAIN_MODEL`, `AIT_SUGGEST_MODEL` | `AIT_NVIDIA_EXPLAIN_MODEL`, `AIT_NVIDIA_SUGGEST_MODEL` |
-
-Any model listed at `https://integrate.api.nvidia.com/v1/models` works for the NVIDIA overrides.
-
-**Privacy:** Only the command you're typing and a short context (OS, current folder, git branch) are sent. Anything that looks like a secret is replaced with `[REDACTED]` first (API keys, tokens, `password=…`, `user:pass@` URLs), and lines containing one never get AI suggestions. Shell history is used locally for suggestions but never sent. Cached answers live in `~/.cache/ai-terminal/`.
+The plugin never blocks your typing: requests go to a small local daemon over a private Unix socket, and answers come back asynchronously. The daemon keeps API connections warm, caches answers, and cancels suggestion requests you've typed past.
 
 ## Roadmap
 
-Tracked on this repo's GitHub Project board: M1 Explain ✅ · M2 NL→command ✅ · M3 Ghost suggestions ✅ · M4 `why` · M5 Polish.
+- [x] Explain commands (`Ctrl+E`)
+- [x] Plain-English → command with a risk check
+- [x] Suggestions as you type
+- [ ] `why`: explain the last failed command
+- [ ] Homebrew install (`brew install ai-terminal`)
+- [ ] Local models via Ollama, fully offline
+
+Ideas and votes welcome in [Issues](https://github.com/thejunghare/ai-terminal/issues).
+
+## Contributing
+
+Pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the layout, tests and guidelines. If ai-terminal helps you or your students, a ⭐ helps other people find it.
+
+## Support the project
+
+ai-terminal is free and always will be. If it saves you time, you can buy me a coffee ☕. It keeps the late-night commits going.
+
+<a href="https://www.buymeacoffee.com/thejunghare"><img src="https://img.shields.io/badge/Buy%20me%20a%20coffee-FFDD00?style=for-the-badge&logo=buymeacoffee&logoColor=black" alt="Buy me a coffee"></a>
+
+## License
+
+[MIT](LICENSE) © Prasad Junghare
