@@ -24,11 +24,13 @@ MODELS = {
         "explain": os.environ.get("AIT_EXPLAIN_MODEL", "claude-sonnet-5-5"),
         "suggest": os.environ.get("AIT_SUGGEST_MODEL", "claude-haiku-5-5"),
         "generate": os.environ.get("AIT_EXPLAIN_MODEL", "claude-sonnet-5-5"),
+        "why": os.environ.get("AIT_EXPLAIN_MODEL", "claude-sonnet-5-5"),
     },
     "nvidia": {
         "explain": os.environ.get("AIT_NVIDIA_EXPLAIN_MODEL", "openai/gpt-oss-20b"),
         "suggest": os.environ.get("AIT_NVIDIA_SUGGEST_MODEL", "openai/gpt-oss-20b"),
         "generate": os.environ.get("AIT_NVIDIA_EXPLAIN_MODEL", "openai/gpt-oss-20b"),
+        "why": os.environ.get("AIT_NVIDIA_EXPLAIN_MODEL", "openai/gpt-oss-20b"),
     },
 }
 
@@ -252,7 +254,7 @@ async def probe_nvidia_models() -> str:
 
 
 async def complete(task: str, system: str, user: str, max_tokens: int = 600) -> tuple[str, str]:
-    """Run one prompt for `task` ("explain" or "suggest"); returns (text, model used)."""
+    """Run one prompt for `task` (a key of MODELS); returns (text, model used)."""
     provider, key = _provider()
     if provider == "anthropic":
         model = MODELS["anthropic"][task]

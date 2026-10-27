@@ -12,7 +12,7 @@ import os
 import signal
 import sys
 
-from . import __version__, explain, generate, llm, suggest
+from . import __version__, explain, generate, llm, suggest, why
 
 SOCK_PATH = os.environ.get("AIT_SOCK", os.path.expanduser("~/.ai-terminal.sock"))
 PID_PATH = SOCK_PATH + ".pid"
@@ -49,6 +49,8 @@ async def _dispatch(kind: str, cwd: str, payload: str) -> str:
         return await generate.generate(payload, cwd)
     if kind == "suggest":
         return await suggest.suggest(payload, cwd)
+    if kind == "why":
+        return await why.why(payload, cwd, int(option) if option.isdigit() else 80)
     raise ValueError(f"unknown request type: {kind}")
 
 

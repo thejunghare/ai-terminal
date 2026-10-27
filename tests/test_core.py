@@ -1,3 +1,4 @@
+import asyncio
 import os
 import sys
 import tempfile
@@ -5,7 +6,7 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "daemon"))
 
-from aitd import context, generate, render, store, suggest  # noqa: E402
+from aitd import context, generate, llm, render, store, suggest, why  # noqa: E402
 
 
 class RedactTest(unittest.TestCase):
@@ -76,6 +77,76 @@ class RenderTest(unittest.TestCase):
 
     def test_unformatted_answer_still_shown(self):
         self.assertIn("plain answer", render.render("x", "plain answer", cols=60))
+
+
+class WhyTest(unittest.TestCase):
+    SCREEN = ("% ls\nREADME.md\n"
+              "% git psuh origin main\n"
+              "git: 'psuh' is not a git command. See 'git --help'.\n\n"
+              "The most similar command is\n\tpush\n"
+              "% why\n")
+    RAW = ("SUMMARY: You typed psuh instead of push.\n"
+           "FIX: git push origin main :: Push with the right spelling\n"
+           "TIP: Run git config --global help.autocorrect 10 to fix typos.")
+
+    def setUp(self):
+        os.environ["NO_COLOR"] = "1"
+
+    def test_cuts_the_output_out_of_the_screen(self):
+        out = why.output_of("git psuh origin main", self.SCREEN)
+        self.assertTrue(out.startswith("git: 'psuh' is not a git command"))
+        self.assertIn("\tpush", out)
+        self.assertNotIn("README", out)
+        self.assertNotIn("% why", out)
+
+    def test_output_is_capped(self):
+        screen = "% make\n" + "\n".join(f"line {i}" for i in range(500)) + "\n% why"
+        out = why.output_of("make", screen)
+        self.assertEqual(len(out.splitlines()), why.MAX_LINES)
+        self.assertTrue(out.endswith("line 499"))
+
+    def test_status_meanings(self):
+        self.assertIn("not found", why.status_meaning("127"))
+        self.assertIn("Ctrl+C", why.status_meaning("130"))
+        self.assertIn("piped", why.status_meaning("?"))
+
+    def _ask(self, payload, raw):
+        sent = {}
+
+        async def fake(task, system, user, max_tokens=600):
+            sent["user"] = user
+            return raw, "test-model"
+        real, llm.complete = llm.complete, fake
+        try:
+            return asyncio.run(why.why(payload, "/tmp", 60)), sent["user"]
+        finally:
+            llm.complete = real
+
+    def test_answer_and_fix_for_the_prompt(self):
+        sep = why.FIELD_SEP
+        reply, user = self._ask(sep.join(["1", "git psuh origin main", "screen", self.SCREEN]),
+                                self.RAW)
+        text, fix = reply.split(why.FIX_SEP)
+        self.assertEqual(fix, "git push origin main")
+        self.assertIn("You typed psuh instead of push.", text)
+        self.assertIn("git push origin main   Push with the right spelling", text)
+        self.assertIn("1, error", user)
+        self.assertNotIn("README", user)              # only the failed command's output
+
+    def test_risky_fix_is_not_put_on_the_prompt(self):
+        raw = "SUMMARY: The folder is in the way.\nFIX: rm -r build :: Delete the old build"
+        reply, _ = self._ask(why.FIELD_SEP.join(["1", "mkdir build", "none", ""]), raw)
+        self.assertNotIn(why.FIX_SEP, reply)
+        self.assertIn("rm -r build", reply)           # still shown, to copy by hand
+
+    def test_secrets_in_output_are_redacted(self):
+        out = "error: bad token ghp_abcdefghijklmnopqrstuvwxyz123456"
+        _, user = self._ask(why.FIELD_SEP.join(["?", "deploy", "pipe", out]), self.RAW)
+        self.assertNotIn("ghp_abc", user)
+
+    def test_needs_a_command(self):
+        reply, _ = asyncio.run(why.why("0", "/tmp")), None
+        self.assertTrue(reply.startswith("ERR:"))
 
 
 class DiskCacheTest(unittest.TestCase):

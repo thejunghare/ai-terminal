@@ -7,7 +7,9 @@
 #   # ...    type a request in plain English after #, press Return: the AI writes the
 #            command. Safe ones run straight away; risky ones ask "Run it? y/n" first.
 #            Ctrl+G does the same for any line without the #.
-#   ait      helper command: ait start|stop|restart|status|key|models|suggest on|off|explain <cmd>|log
+#   why      after a command fails: explains why, and puts the likely fix on the prompt.
+#            Also takes output from a pipe:  make 2>&1 | why
+#   ait      helper command: ait start|stop|restart|status|key|models|suggest on|off|explain <cmd>|why|log
 #
 # Settings (set before sourcing):
 #   AIT_EXPLAIN_KEY     key binding for explain              (default: ^E)
@@ -15,6 +17,7 @@
 #   AIT_AI_SUGGEST      1 = ask the AI when history has none (default: 1)
 #   AIT_SUGGEST_DELAY   pause in seconds before asking the AI (default: 0.8)
 #   AIT_SUGGEST_STYLE   highlight for the ghost text          (default: fg=8)
+#   AIT_WHY_SCREEN      1 = `why` reads the end of the terminal screen  (default: 1)
 #   AIT_CONFIRM         risky = run safe AI commands at once, ask y/n for risky ones;
 #                       all = always ask                      (default: risky)
 #   AIT_SOCK            daemon socket path                   (default: ~/.ai-terminal.sock)
@@ -388,6 +391,76 @@ for _ait_km in emacs viins; do
 done
 unset _ait_km
 
+# --- why: explain the last failed command ------------------------------------
+# Hooks remember the last command and its exit status. The output isn't kept by the
+# shell, so `why` reads the end of the terminal screen (Terminal.app, iTerm2, tmux),
+# or takes it from a pipe:  make 2>&1 | why
+
+typeset -g _ait_cmd= _ait_last_cmd= _ait_last_status=0
+
+_ait_preexec() { _ait_cmd=$1 }
+
+_ait_precmd() {
+  local st=$?                                  # must stay first
+  [[ -n $_ait_cmd ]] || return 0
+  if [[ ${${(z)_ait_cmd}[1]} != (why|ait) ]]; then
+    _ait_last_cmd=$_ait_cmd _ait_last_status=$st
+  fi
+  _ait_cmd=
+}
+
+# The end of this terminal's scrollback in REPLY; fails where it can't be read.
+_ait_screen() {
+  (( ${AIT_WHY_SCREEN:-1} )) || return 1
+  case $TERM_PROGRAM in
+    tmux)           REPLY=$(tmux capture-pane -p -J -S -300 2>/dev/null) ;;
+    Apple_Terminal) REPLY=$(osascript -e 'tell application "Terminal" to get history of selected tab of front window' 2>/dev/null) ;;
+    iTerm.app)      REPLY=$(osascript -e 'tell application "iTerm2" to get contents of current session of current window' 2>/dev/null) ;;
+    *)              return 1 ;;
+  esac
+  [[ -n $REPLY ]] || return 1
+  (( ${#REPLY} > 20000 )) && REPLY=${REPLY[-20000,-1]}
+  return 0
+}
+
+_ait_why() {
+  setopt localoptions extendedglob
+  local cmd st src out= reply rc t0=$EPOCHREALTIME
+  if [[ ! -t 0 && $_ait_cmd == *\|* ]]; then   # some-command 2>&1 | why
+    cmd=${_ait_cmd%\|*} st='?' src=pipe
+    out=$(tail -c 20000)
+  else
+    cmd=$_ait_last_cmd st=$_ait_last_status src=screen
+    _ait_screen && out=$REPLY || src=none
+  fi
+  cmd=${${cmd##[[:space:]]#}%%[[:space:]]#}
+  if [[ -z $cmd ]]; then
+    print "Nothing to explain yet. Run a command first, then: why"
+    return 1
+  fi
+  print -n $'  \e[2mLooking into it…\e[0m'
+  reply=$(_ait_request "why:${COLUMNS:-80}" "$st"$'\x1f'"$cmd"$'\x1f'"$src"$'\x1f'"$out")
+  rc=$?
+  print -n $'\r\e[K'
+  if (( rc )); then
+    print -r -- $'  \e[33m'"${reply#ERR: }"$'\e[0m'
+    return 1
+  fi
+  local text=${reply%%$'\x1e'*} fix=
+  [[ $reply == *$'\x1e'* ]] && fix=${reply#*$'\x1e'}
+  _ait_elapsed $t0
+  print -r -- $'\n'"$text"$'\n\n  \e[2m'"${fix:+First fix is on your prompt. Return runs it.  }$REPLY"$'\e[0m\n'
+  [[ -n $fix ]] && print -z -- "$fix"
+  return 0
+}
+
+autoload -Uz add-zsh-hook
+add-zsh-hook preexec _ait_preexec
+precmd_functions=(_ait_precmd ${precmd_functions:#_ait_precmd})   # first, to see $?
+
+# `why` unless something else already has the name; `ait why` always works.
+(( $+commands[why] || $+aliases[why] )) || why() { _ait_why "$@" }
+
 # Start the daemon in the background so the first suggestion doesn't have to wait.
 [[ -S $AIT_SOCK ]] || _ait_daemon_spawn
 
@@ -401,6 +474,7 @@ ait() {
     restart) _ait_daemon_stop; _ait_daemon_start && print "restarted" ;;
     status)  _ait_request ping "" ;;
     explain) shift; _ait_request "explain:${COLUMNS:-80}" "$*" ;;
+    why)     _ait_why ;;
     suggest)
       case $2 in
         on)  AIT_SUGGEST=1 AIT_AI_SUGGEST=1; print "suggestions on (history + AI)" ;;
@@ -427,6 +501,6 @@ ait() {
         && print "Saved $provider key to Keychain (service: $service)." && _ait_daemon_stop ;;
     models)  _ait_request models "" ;;
     log)     tail -n 50 ~/Library/Logs/ai-terminal.log ;;
-    *)       print "usage: ait start|stop|restart|status|key|models|suggest on|history|off|explain <command>|log" ;;
+    *)       print "usage: ait start|stop|restart|status|key|models|suggest on|history|off|explain <command>|why|log" ;;
   esac
 }

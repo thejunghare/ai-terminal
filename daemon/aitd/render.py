@@ -1,4 +1,4 @@
-"""Turns the model's SUMMARY/PART/WARN/TIP lines into a quiet, native-looking block.
+"""Turns the model's SUMMARY/PART/FIX/WARN/TIP lines into a quiet, native-looking block.
 
 Design: no frames, titles or emoji. Hierarchy comes from weight and dimming in the
 terminal's own palette (like primary/secondary labels); the only colour is the
@@ -9,7 +9,7 @@ import re
 import textwrap
 import unicodedata
 
-_LINE = re.compile(r"^\s*(SUMMARY|PART|WARN|TIP)\s*:\s*(.*)$", re.IGNORECASE)
+_LINE = re.compile(r"^\s*(SUMMARY|PART|FIX|WARN|TIP)\s*:\s*(.*)$", re.IGNORECASE)
 _ANSI = re.compile(r"\033\[[0-9;]*m")
 
 RESET = "\033[0m"
@@ -28,7 +28,7 @@ def _width(text: str) -> int:
 
 
 def _parse(raw: str) -> dict:
-    out = {"summary": "", "parts": [], "warn": [], "tip": [], "other": []}
+    out = {"summary": "", "parts": [], "fix": [], "warn": [], "tip": [], "other": []}
     for line in raw.splitlines():
         if not line.strip():
             continue
@@ -39,9 +39,10 @@ def _parse(raw: str) -> dict:
         kind, body = m.group(1).upper(), m.group(2).strip()
         if kind == "SUMMARY" and not out["summary"]:
             out["summary"] = body
-        elif kind == "PART":
+        elif kind in ("PART", "FIX"):
             piece, _, meaning = body.partition("::")
-            out["parts"].append((piece.strip().strip("`"), meaning.strip().rstrip(".")))
+            out["parts" if kind == "PART" else "fix"].append(
+                (piece.strip().strip("`"), meaning.strip().rstrip(".")))
         elif kind == "WARN":
             out["warn"].append(body)
         elif kind == "TIP":
@@ -68,11 +69,12 @@ def render(command: str, raw: str, cols: int = 80, model: str = "") -> str:
     if data["summary"]:
         para(data["summary"], "primary")
 
-    if data["parts"]:
+    def columns(pairs: list[tuple[str, str]]) -> None:
+        """Command pieces on the left, their meanings dimmed on the right."""
         out.append("")
-        name_w = min(max(_width(p) for p, _ in data["parts"]), width // 2)
+        name_w = min(max(_width(p) for p, _ in pairs), width // 2)
         hang = INDENT + " " * name_w + GAP
-        for piece, meaning in data["parts"]:
+        for piece, meaning in pairs:
             if _width(piece) > name_w:              # long piece gets its own line
                 para(piece)
                 para(meaning, "secondary", lead=hang, hang=hang)
@@ -80,7 +82,11 @@ def render(command: str, raw: str, cols: int = 80, model: str = "") -> str:
                 lead = INDENT + piece + " " * (name_w - _width(piece)) + GAP
                 para(meaning, "secondary", lead=lead, hang=hang)
 
-    if not data["summary"] and not data["parts"]:  # model ignored the format
+    for pairs in (data["parts"], data["fix"]):
+        if pairs:
+            columns(pairs)
+
+    if not (data["summary"] or data["parts"] or data["fix"]):  # model ignored the format
         for line in data["other"]:
             para(line)
 

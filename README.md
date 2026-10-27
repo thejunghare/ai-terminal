@@ -53,6 +53,7 @@ So ai-terminal is a small, free, open-source zsh plugin. Bring your own API key 
 |---|---|
 | **Ask in plain English** | Type `# make a new folder here` and press Return. Safe commands run straight away; risky ones ask `y/n` first. |
 | **Suggestions as you type** | Grey ghost text after the cursor: from your history instantly, from the AI after a short pause. Press `→` to accept. |
+| **Why did that fail?** | Type `why` after an error. You get the cause in one line and the likely fix, already on your prompt. |
 | **Explain any command** | Press `Ctrl+E` before running something. A quiet, native-looking breakdown appears above your prompt, and you can keep typing while it loads. |
 | **Safety first** | A local risk check flags deletes, overwrites, `sudo`, recursive permission changes, stopping processes and `curl \| sh`, whatever the AI says. |
 | **Private by design** | API key in the macOS Keychain, secrets redacted before anything leaves your Mac, shell history never sent. |
@@ -116,6 +117,24 @@ Just type. A matching command from your history appears in grey immediately; oth
 
 Type a command, **don't press Enter**, press `Ctrl+E`. If the cursor is mid-line, the first press jumps to the end (as `Ctrl+E` normally does) and the second explains.
 
+### Why did that fail?
+
+After a command fails, type `why`:
+
+```
+% git psuh origin main
+git: 'psuh' is not a git command. See 'git --help'.
+% why
+  You typed psuh instead of push.
+
+  git push origin main   Push with the right spelling
+
+  First fix is on your prompt. Return runs it.  1.4s
+% git push origin main
+```
+
+`why` reads the end of the failed command's output from the screen (Terminal.app, iTerm2 and tmux). The first time, macOS asks whether Terminal may control Terminal; allow it, or set `AIT_WHY_SCREEN=0` and `why` works from the command and exit status alone. You can also pipe output in: `make 2>&1 | why`. A risky fix (deletes, `sudo`, …) is shown but never put on your prompt.
+
 ### The `ait` command
 
 | Command | What it does |
@@ -125,6 +144,7 @@ Type a command, **don't press Enter**, press `Ctrl+E`. If the cursor is mid-line
 | `ait models` | Test which NVIDIA models answer for your key, and how fast |
 | `ait suggest on` / `history` / `off` | AI + history suggestions, history only, or none |
 | `ait explain <cmd>` | Explain without the key binding |
+| `ait why` | Same as `why`, if another `why` command already exists |
 | `ait start` / `stop` / `restart` | Manage the background daemon (it starts automatically) |
 | `ait log` | Show the daemon log |
 
@@ -140,13 +160,14 @@ Add any of these above the `source` line in `~/.zshrc`:
 | `AIT_SUGGEST_DELAY` | `0.8` | Seconds of pause before asking the AI |
 | `AIT_SUGGEST_STYLE` | `fg=8` | How ghost text is drawn, e.g. `fg=240` for fainter |
 | `AIT_EXPLAIN_KEY` | `^E` | Key binding for explain, e.g. `'^X^E'` |
+| `AIT_WHY_SCREEN` | `1` | `0` stops `why` reading the terminal screen |
 | `AIT_PROVIDER` | auto | `anthropic` or `nvidia` when you've saved both |
 | `AIT_NVIDIA_EXPLAIN_MODEL` | `openai/gpt-oss-20b` | Any model from `ait models` |
 | `NO_COLOR` | unset | `1` for output without colour |
 
 ## Privacy & safety
 
-- **What's sent:** only the line you're working on, plus a short context (macOS version, current folder, git branch).
+- **What's sent:** only the line you're working on, plus a short context (macOS version, current folder, git branch). When you type `why`, also the failed command, its exit status and the last 60 lines of its output.
 - **Redacted first:** API keys, tokens, `password=…` and `user:pass@` URLs become `[REDACTED]`; lines containing them never get AI suggestions.
 - **Never sent:** your shell history (used locally for suggestions only) and your files.
 - **Never auto-run when risky:** the local risk check can't be skipped by the AI.
@@ -168,7 +189,7 @@ The plugin never blocks your typing: requests go to a small local daemon over a 
 - [x] Explain commands (`Ctrl+E`)
 - [x] Plain-English → command with a risk check
 - [x] Suggestions as you type
-- [ ] `why`: explain the last failed command
+- [x] `why`: explain the last failed command
 - [ ] Homebrew install (`brew install ai-terminal`)
 - [ ] Local models via Ollama, fully offline
 
