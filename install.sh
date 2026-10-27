@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Installs ai-terminal: creates a venv for the daemon and hooks the plugin into ~/.zshrc.
+# Installs ai-terminal: creates a venv for the daemon and hooks the plugin into zsh and bash.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -22,25 +22,34 @@ else
 fi
 "$VENV_PY" -m pip install --quiet --disable-pip-version-check -r "$ROOT/requirements.txt"
 
-LINE="source \"$ROOT/plugin/ai-terminal.zsh\""
-if ! grep -qF "$LINE" "$HOME/.zshrc" 2>/dev/null; then
-  echo "→ Adding plugin to ~/.zshrc"
-  printf '\n# ai-terminal\n%s\n' "$LINE" >> "$HOME/.zshrc"
-fi
+# Hook the plugin into zsh and bash, so either shell works.
+add_line() {   # add_line <file> <line>
+  if ! grep -qF "$2" "$1" 2>/dev/null; then
+    echo "→ Adding plugin to ${1/#"$HOME"/\~}"
+    printf '\n# ai-terminal\n%s\n' "$2" >> "$1"
+  fi
+}
+add_line "$HOME/.zshrc" "source \"$ROOT/plugin/ai-terminal.zsh\""
+# Interactive non-login bash reads ~/.bashrc; login bash (Terminal.app) reads the first
+# of these that exists. Never create ~/.bash_profile over an existing ~/.profile.
+BASH_LINE="source \"$ROOT/plugin/ai-terminal.bash\""
+add_line "$HOME/.bashrc" "$BASH_LINE"
+for f in "$HOME/.bash_profile" "$HOME/.bash_login" "$HOME/.profile" ""; do
+  [[ -z $f || -f $f ]] && break
+done
+add_line "${f:-$HOME/.bash_profile}" "[ -n \"\$BASH_VERSION\" ] && $BASH_LINE"
 
 echo
 echo "Done. Next:"
-echo "  1. Open a new terminal tab (or: source ~/.zshrc)"
+echo "  1. Open a new terminal tab"
 echo "  2. Run: ait key        # paste an NVIDIA (nvapi-...) or Anthropic key; saved in Keychain"
-echo "  3. Type a command, press Ctrl+E to explain it"
+echo "  3. Type: # make a new folder here      (then Return)"
 
-# The plugin only loads in zsh. Warn if this terminal is running something else.
 PARENT_SHELL="$(ps -o comm= -p "$PPID" 2>/dev/null || true)"
 PARENT_SHELL="${PARENT_SHELL#-}"          # login shells show up as "-bash" / "-zsh"
 PARENT_SHELL="${PARENT_SHELL##*/}"
-if [[ "$PARENT_SHELL" != zsh ]]; then
+if [[ "$PARENT_SHELL" == bash ]]; then
   echo
-  echo "⚠ This terminal is running $PARENT_SHELL, but ai-terminal needs zsh."
-  echo "  Run 'zsh' to switch now. In Terminal.app, to make it permanent:"
-  echo "  Settings → General → Shells open with → Default login shell"
+  echo "You're in bash: plain-English requests, why and ait all work. Suggestions as you"
+  echo "type need zsh, and Ctrl+E / Ctrl+G need bash 4+ (brew install bash)."
 fi

@@ -6,7 +6,7 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "daemon"))
 
-from aitd import context, generate, llm, render, store, suggest, why  # noqa: E402
+from aitd import client, context, generate, llm, render, store, suggest, why  # noqa: E402
 
 
 class RedactTest(unittest.TestCase):
@@ -172,6 +172,41 @@ class ModelOutputTest(unittest.TestCase):
         self.assertNotIn("\x1b", clean)
         self.assertNotIn("\x9b", clean)
         self.assertIn("\n", clean)
+
+
+class ClientTest(unittest.TestCase):
+    """The bash plugin talks to the daemon through aitd.client."""
+
+    def test_round_trip(self):
+        async def run():
+            with tempfile.TemporaryDirectory() as d:
+                path = os.path.join(d, "s")
+                got = {}
+
+                async def handle(reader, writer):
+                    got["req"] = await reader.read(1000)
+                    writer.write(b"pong")
+                    await writer.drain()
+                    writer.close()
+                server = await asyncio.start_unix_server(handle, path=path)
+                client.SOCK_PATH = path
+                async with server:
+                    reply = await asyncio.to_thread(client.request, "ping", "hi")
+                return reply, got["req"]
+        reply, req = asyncio.run(run())
+        self.assertEqual(reply, "pong")
+        self.assertEqual(req, f"ping\0{os.getcwd()}\0hi\0".encode())
+
+    def test_no_daemon(self):
+        client.SOCK_PATH = "/nonexistent/sock"
+        self.assertTrue(client.request("ping", "").startswith("ERR:"))
+
+    def test_client_stays_light(self):
+        # Every bash request starts a Python process; importing the SDKs would add ~1.5s.
+        import subprocess
+        code = "import sys, aitd.client; sys.exit('anthropic' in sys.modules)"
+        env = dict(os.environ, PYTHONPATH=os.path.join(os.path.dirname(__file__), "..", "daemon"))
+        self.assertEqual(subprocess.run([sys.executable, "-c", code], env=env).returncode, 0)
 
 
 class DiskCacheTest(unittest.TestCase):
