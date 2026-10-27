@@ -12,5 +12,5 @@ Shelldon sits inside your shell, so it is built to be careful:
 ## Reporting a vulnerability
 
 Please **don't open a public issue** for security problems. Use GitHub's
-[private vulnerability reporting](https://github.com/thejunghare/ai-terminal/security/advisories/new)
+[private vulnerability reporting](https://github.com/thejunghare/shelldon/security/advisories/new)
 instead, and include steps to reproduce. You'll get a reply as soon as possible.

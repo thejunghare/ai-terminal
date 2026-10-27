@@ -7,10 +7,10 @@
 Suggestions as you type, plain-English commands, instant explanations and "why did that fail?",<br>
 inside macOS Terminal and iTerm2, in **zsh or bash**. No new app, no subscription.
 
-[![CI](https://github.com/thejunghare/ai-terminal/actions/workflows/ci.yml/badge.svg)](https://github.com/thejunghare/ai-terminal/actions/workflows/ci.yml)
+[![CI](https://github.com/thejunghare/shelldon/actions/workflows/ci.yml/badge.svg)](https://github.com/thejunghare/shelldon/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![macOS](https://img.shields.io/badge/macOS-zsh%20%7C%20bash-black?logo=apple)
-[![GitHub stars](https://img.shields.io/github/stars/thejunghare/ai-terminal?style=social)](https://github.com/thejunghare/ai-terminal/stargazers)
+[![GitHub stars](https://img.shields.io/github/stars/thejunghare/shelldon?style=social)](https://github.com/thejunghare/shelldon/stargazers)
 [![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-FFDD00?logo=buymeacoffee&logoColor=black)](https://www.buymeacoffee.com/thejunghare)
 
 </div>
@@ -66,8 +66,8 @@ So Shelldon is a small, free, open-source plugin for zsh and bash. Bring your ow
 **Requirements:** macOS, zsh or bash, Python 3.10+.
 
 ```bash
-git clone https://github.com/thejunghare/ai-terminal.git ~/ai-terminal
-~/ai-terminal/install.sh
+git clone https://github.com/thejunghare/shelldon.git ~/shelldon
+~/shelldon/install.sh
 ```
 
 The installer hooks the plugin into both zsh (`~/.zshrc`) and bash (`~/.bashrc` and your login profile), so whichever shell you open is ready. Open a new terminal tab, then save an API key:
@@ -279,7 +279,7 @@ The plugin never blocks your typing: requests go to a small local daemon over a 
 - [ ] Homebrew install (`brew install shelldon`)
 - [ ] Local models via Ollama, fully offline
 
-Ideas and votes welcome in [Issues](https://github.com/thejunghare/ai-terminal/issues).
+Ideas and votes welcome in [Issues](https://github.com/thejunghare/shelldon/issues).
 
 ## Contributing
 

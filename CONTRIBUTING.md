@@ -17,8 +17,8 @@ Thanks for wanting to help! Shelldon is small on purpose, so it's easy to find y
 ## Getting started
 
 ```bash
-git clone https://github.com/thejunghare/ai-terminal.git
-cd ai-terminal
+git clone https://github.com/thejunghare/shelldon.git
+cd shelldon
 ./install.sh
 python3 -m unittest discover tests     # run from the repo root, using .venv/bin/python
 zsh -n plugin/ai-terminal.zsh          # syntax checks

@@ -6,8 +6,8 @@ cd "$(dirname "$0")/.."
 
 VISIBILITY=--private
 [[ "${1:-}" == "--public" ]] && VISIBILITY=--public
-REPO_NAME=ai-terminal
-PROJECT_TITLE="AI Terminal"
+REPO_NAME=shelldon
+PROJECT_TITLE="Shelldon"
 
 gh auth status >/dev/null 2>&1 || { echo "Run: gh auth login --scopes project"; exit 1; }
 gh auth status 2>&1 | grep -q "'project'" || {
