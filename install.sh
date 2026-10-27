@@ -31,7 +31,7 @@ fi
 echo
 echo "Done. Next:"
 echo "  1. Open a new terminal tab (or: source ~/.zshrc)"
-echo "  2. Run: ait key        # stores your Anthropic API key in Keychain"
+echo "  2. Run: ait key        # paste an NVIDIA (nvapi-...) or Anthropic key; saved in Keychain"
 echo "  3. Type a command, press Ctrl+E to explain it"
 
 # The plugin only loads in zsh. Warn if this terminal is running something else.

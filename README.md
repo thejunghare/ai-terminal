@@ -58,8 +58,8 @@ A long-running daemon keeps the API client warm, so there's no Python startup on
 
 | | Anthropic | NVIDIA |
 |---|---|---|
-| Explanations | `claude-sonnet-5-5` | `deepseek-ai/deepseek-v4.1-flash` (falls back to other models if your account can't use it) |
-| Fast suggestions (coming) | `claude-haiku-5-5` | `deepseek-ai/deepseek-v4.1-flash` |
+| Explanations | `claude-sonnet-5-5` | `openai/gpt-oss-20b` (falls back to other models if your account can't use it) |
+| Fast suggestions (coming) | `claude-haiku-5-5` | `openai/gpt-oss-20b` |
 | Override with | `AIT_EXPLAIN_MODEL`, `AIT_SUGGEST_MODEL` | `AIT_NVIDIA_EXPLAIN_MODEL`, `AIT_NVIDIA_SUGGEST_MODEL` |
 
 Any model listed at `https://integrate.api.nvidia.com/v1/models` works for the NVIDIA overrides.

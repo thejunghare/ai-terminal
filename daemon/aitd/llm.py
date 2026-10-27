@@ -25,8 +25,8 @@ MODELS = {
         "suggest": os.environ.get("AIT_SUGGEST_MODEL", "claude-haiku-5-5"),
     },
     "nvidia": {
-        "explain": os.environ.get("AIT_NVIDIA_EXPLAIN_MODEL", "deepseek-ai/deepseek-v4.1-flash"),
-        "suggest": os.environ.get("AIT_NVIDIA_SUGGEST_MODEL", "deepseek-ai/deepseek-v4.1-flash"),
+        "explain": os.environ.get("AIT_NVIDIA_EXPLAIN_MODEL", "openai/gpt-oss-20b"),
+        "suggest": os.environ.get("AIT_NVIDIA_SUGGEST_MODEL", "openai/gpt-oss-20b"),
     },
 }
 
@@ -35,8 +35,8 @@ NVIDIA_BASE_URL = os.environ.get("AIT_NVIDIA_BASE_URL", "https://integrate.api.n
 # build.nvidia.com lists models that a given account can't call (HTTP 404
 # "Function ... Not found for account"). When that happens we try these in order.
 NVIDIA_FALLBACK_MODELS = [
-    "deepseek-ai/deepseek-v4.1-flash",
     "openai/gpt-oss-20b",
+    "deepseek-ai/deepseek-v4.1-flash",
     "z-ai/glm-5.3-flash",
     "nvidia/nemotron-3-super-120b-a12b",
     "nv-mistralai/mistral-nemo-12b-instruct",
