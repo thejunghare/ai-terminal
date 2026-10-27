@@ -3,8 +3,8 @@
 AI help inside your **native macOS terminal** (Terminal.app or iTerm2). It's a zsh plugin, not a new app.
 
 - **Suggestions as you type**: grey "ghost" text after the cursor, from your history instantly and from the AI after a short pause. Press `→` to accept.
-- **Explain** any command before you run it: press `Ctrl+E`. You can keep typing; a framed breakdown appears above your prompt.
-- *(coming)* English → command with `Ctrl+G`
+- **Ask in plain English**: type `# make a new folder here` and press Return. The AI puts the command on your prompt line; press Return again to run it.
+- **Explain** any command before you run it: press `Ctrl+E`. You can keep typing; the breakdown appears above your prompt.
 - *(coming)* `why` explains your last failed command
 
 It never runs anything for you. It only fills in or explains your prompt.
@@ -28,6 +28,25 @@ You need an API key from either provider:
 If you save both, Anthropic is used. To choose, put `export AIT_PROVIDER=nvidia` (or `anthropic`) above the `source` line in `~/.zshrc`.
 
 ## Use
+
+### Ask in plain English
+
+Start the line with `#`, say what you want, and press Return:
+
+```
+% # make a new folder in here
+```
+
+The line turns into the command, ready to run. Nothing happens until you press Return again (or `Ctrl+C` to cancel):
+
+```
+% mkdir -p new-folder
+Return to run, Ctrl+C to cancel.
+```
+
+Commands that delete, overwrite, need `sudo`, change permissions recursively, stop processes or run downloaded scripts show a warning first, e.g. `⚠︎ Deletes files. They skip the Trash.` This check also runs locally, so it doesn't rely on the AI flagging it.
+
+`Ctrl+G` does the same for a line without the `#`.
 
 ### Suggestions
 
@@ -108,4 +127,4 @@ Any model listed at `https://integrate.api.nvidia.com/v1/models` works for the N
 
 ## Roadmap
 
-Tracked on this repo's GitHub Project board: M1 Explain ✅ · M2 NL→command · M3 Ghost suggestions ✅ · M4 `why` · M5 Polish.
+Tracked on this repo's GitHub Project board: M1 Explain ✅ · M2 NL→command ✅ · M3 Ghost suggestions ✅ · M4 `why` · M5 Polish.

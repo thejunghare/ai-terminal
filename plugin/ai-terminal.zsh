@@ -4,6 +4,9 @@
 #            from the AI after a short pause.  → or End accepts it.
 #   Ctrl+E   on a typed command: explain it (first press still jumps to end of line).
 #            You can keep typing while it works; the answer prints above the prompt.
+#   # ...    type a request in plain English after #, press Return: the AI puts the
+#            command on the line. Press Return again to run it. Ctrl+G does the same
+#            for any line without the #.
 #   ait      helper command: ait start|stop|restart|status|key|models|suggest on|off|explain <cmd>|log
 #
 # Settings (set before sourcing):
@@ -133,6 +136,66 @@ zle -N ait-explain _ait_explain_widget
 zle -N _ait_explain_ready
 bindkey "$AIT_EXPLAIN_KEY" ait-explain
 
+# --- ask in plain English: "# request" + Return, or Ctrl+G --------------------
+# The AI's command replaces the line; nothing runs until you press Return again.
+
+typeset -g _ait_generate_fd=0 _ait_generate_for=
+
+_ait_generate_start() {
+  if (( _ait_generate_fd )); then
+    zle -F $_ait_generate_fd 2>/dev/null; exec {_ait_generate_fd}<&-
+  fi
+  _ait_cancel_suggest
+  _ait_hide_ghost
+  if ! _ait_send generate "$BUFFER" start; then
+    zle -M "Can't reach ai-terminal. Try: ait restart"
+    return
+  fi
+  _ait_generate_fd=$REPLY
+  _ait_generate_for=$BUFFER
+  zle -F -w $_ait_generate_fd _ait_generate_ready
+  zle -M "Thinking…"
+}
+
+_ait_generate_ready() {
+  local fd=$1 out= cmd risk=
+  zle -F $fd
+  IFS= read -r -d '' -u $fd out
+  exec {fd}<&-
+  _ait_generate_fd=0
+  if [[ -z $out || $out == ERR:* ]]; then
+    zle -M "${${out#ERR: }:-No answer. Try again.}"
+    return
+  fi
+  if [[ $BUFFER != "$_ait_generate_for" ]]; then   # you moved on; don't overwrite it
+    zle -M ""
+    return
+  fi
+  cmd=${out%%$'\n'*}
+  [[ $out == *$'\n'* ]] && risk=${out#*$'\n'}
+  BUFFER=$cmd
+  CURSOR=${#BUFFER}
+  _ait_seen=$BUFFER                                # no ghost over the AI's command
+  if [[ -n $risk ]]; then
+    zle -M "⚠︎ $risk Return to run, Ctrl+C to cancel."
+  else
+    zle -M "Return to run, Ctrl+C to cancel."
+  fi
+  zle -R
+}
+
+_ait_generate_widget() {
+  if [[ -z ${BUFFER//[[:space:]]/} ]]; then
+    zle -M "Type what you want, then Ctrl+G. For example: make a new folder here"
+    return
+  fi
+  _ait_generate_start
+}
+
+zle -N ait-generate _ait_generate_widget
+zle -N _ait_generate_ready
+bindkey '^G' ait-generate
+
 # --- ghost suggestions -------------------------------------------------------
 
 typeset -g _ait_ghost= _ait_seen= _ait_suggest_for=
@@ -242,6 +305,10 @@ _ait_accept_forward_char() { _ait_accept_or .forward-char }
 _ait_accept_end_of_line()  { _ait_accept_or .end-of-line }
 
 _ait_accept_line() {
+  if [[ $BUFFER =~ '^[[:space:]]*#[[:space:]]*[^[:space:]]' ]]; then
+    _ait_generate_start                        # "# make a new folder here" → a command
+    return
+  fi
   _ait_cancel_suggest
   _ait_hide_ghost                              # don't leave grey text in the scrollback
   zle .accept-line

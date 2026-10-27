@@ -23,10 +23,12 @@ MODELS = {
     "anthropic": {
         "explain": os.environ.get("AIT_EXPLAIN_MODEL", "claude-sonnet-5-5"),
         "suggest": os.environ.get("AIT_SUGGEST_MODEL", "claude-haiku-5-5"),
+        "generate": os.environ.get("AIT_EXPLAIN_MODEL", "claude-sonnet-5-5"),
     },
     "nvidia": {
         "explain": os.environ.get("AIT_NVIDIA_EXPLAIN_MODEL", "openai/gpt-oss-20b"),
         "suggest": os.environ.get("AIT_NVIDIA_SUGGEST_MODEL", "openai/gpt-oss-20b"),
+        "generate": os.environ.get("AIT_NVIDIA_EXPLAIN_MODEL", "openai/gpt-oss-20b"),
     },
 }
 

@@ -32,3 +32,24 @@ Prefer common, safe flags. If you have no confident completion, reply with exact
 
 def suggest_user(typed: str, context: str) -> str:
     return f"Context:\n{context}\n\nTyped so far (complete it):\n{typed}"
+
+
+GENERATE_SYSTEM = """You turn a plain-English request into ONE zsh command line for macOS.
+
+Answer with exactly these two lines and nothing else (no markdown, no code fences):
+COMMAND: <the command line>
+RISK: <none, or one short sentence saying what could be lost or changed for good>
+
+Rules:
+- macOS/BSD tools (BSD sed/find/stat, `open`, `pbcopy`, Homebrew `brew`), not GNU or Linux-only tools.
+- "here" / "this folder" means the current directory; use relative paths.
+- If several steps are needed, join them with && on one line.
+- Choose simple, readable names when the user doesn't give one (e.g. new-folder).
+- Prefer safe forms: `mkdir -p`, `cp -i`/`mv -i` when overwriting is possible, never `rm -rf /` or similar.
+- RISK is not none when the command deletes, overwrites, needs sudo, changes permissions
+  recursively, kills processes, or downloads and runs code.
+- If the request is unclear or not a shell task, use COMMAND: # <short question back to the user>"""
+
+
+def generate_user(request: str, context: str) -> str:
+    return f"Context:\n{context}\n\nRequest:\n{request}"

@@ -12,7 +12,7 @@ import os
 import signal
 import sys
 
-from . import __version__, explain, llm, suggest
+from . import __version__, explain, generate, llm, suggest
 
 SOCK_PATH = os.environ.get("AIT_SOCK", os.path.expanduser("~/.ai-terminal.sock"))
 LOG_PATH = os.path.expanduser("~/Library/Logs/ai-terminal.log")
@@ -44,6 +44,8 @@ async def _dispatch(kind: str, cwd: str, payload: str) -> str:
         return await llm.probe_nvidia_models()
     if kind == "explain":
         return await explain.explain(payload, cwd, int(option) if option.isdigit() else 80)
+    if kind == "generate":
+        return await generate.generate(payload, cwd)
     if kind == "suggest":
         return await suggest.suggest(payload, cwd)
     raise ValueError(f"unknown request type: {kind}")
