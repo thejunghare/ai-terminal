@@ -1,6 +1,6 @@
 # Security
 
-Intelligence in Terminal sits inside your shell, so it is built to be careful:
+Shelldon sits inside your shell, so it is built to be careful:
 
 - **Your API key** is stored in the macOS Keychain, never in a file or in your shell history.
 - **Secrets are redacted** (API keys, tokens, private keys, `PASSWORD=…`/`SECRET=…`-style variables, `user:pass@` URLs) before anything is sent to a model provider, and lines containing one never get SI suggestions.

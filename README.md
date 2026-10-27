@@ -1,8 +1,8 @@
 <div align="center">
 
-# Intelligence in Terminal
+# Shelldon
 
-**SI in the terminal you already have.**
+**Intelligence in Terminal. SI in the terminal you already have.**
 
 Suggestions as you type, plain-English commands, instant explanations and "why did that fail?",<br>
 inside macOS Terminal and iTerm2, in **zsh or bash**. No new app, no subscription.
@@ -45,7 +45,7 @@ The first time I saw intelligence inside a terminal was in **Warp**, and it felt
 
 I also teach Linux and Bash commands to students at **School of Future Tech**. We live in the terminal every class: installing tools, moving around folders, running commands for the first time. Having suggestions, explanations and plain-English help **right inside the terminal they already use** turned out to be a huge plus. Students see what a command does *before* they run it, and nothing risky runs without asking.
 
-So Intelligence in Terminal is a small, free, open-source plugin for zsh and bash. Bring your own API key (NVIDIA's is free), and your existing terminal gets smarter.
+So Shelldon is a small, free, open-source plugin for zsh and bash. Bring your own API key (NVIDIA's is free), and your existing terminal gets smarter.
 
 ## Features
 
@@ -276,18 +276,18 @@ The plugin never blocks your typing: requests go to a small local daemon over a 
 - [x] Suggestions as you type
 - [x] `why`: explain the last failed command
 - [x] bash support
-- [ ] Homebrew install (`brew install ai-terminal`)
+- [ ] Homebrew install (`brew install shelldon`)
 - [ ] Local models via Ollama, fully offline
 
 Ideas and votes welcome in [Issues](https://github.com/thejunghare/ai-terminal/issues).
 
 ## Contributing
 
-Pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the layout, tests and guidelines. If Intelligence in Terminal helps you or your students, a ⭐ helps other people find it.
+Pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the layout, tests and guidelines. If Shelldon helps you or your students, a ⭐ helps other people find it.
 
 ## Support the project
 
-Intelligence in Terminal is free and always will be. If it saves you time, you can buy me a coffee ☕. It keeps the late-night commits going.
+Shelldon is free and always will be. If it saves you time, you can buy me a coffee ☕. It keeps the late-night commits going.
 
 <a href="https://www.buymeacoffee.com/thejunghare"><img src="https://img.shields.io/badge/Buy%20me%20a%20coffee-FFDD00?style=for-the-badge&logo=buymeacoffee&logoColor=black" alt="Buy me a coffee"></a>
 

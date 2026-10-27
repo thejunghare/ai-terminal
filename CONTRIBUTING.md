@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for wanting to help! Intelligence in Terminal is small on purpose, so it's easy to find your way around.
+Thanks for wanting to help! Shelldon is small on purpose, so it's easy to find your way around.
 
 ## Layout
 

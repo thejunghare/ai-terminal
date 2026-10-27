@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Installs ai-terminal: creates a venv for the daemon and hooks the plugin into zsh and bash.
+# Installs Shelldon: creates a venv for the daemon and hooks the plugin into zsh and bash.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -26,7 +26,7 @@ fi
 add_line() {   # add_line <file> <line>
   if ! grep -qF "$2" "$1" 2>/dev/null; then
     echo "→ Adding plugin to ${1/#"$HOME"/\~}"
-    printf '\n# ai-terminal\n%s\n' "$2" >> "$1"
+    printf '\n# Shelldon\n%s\n' "$2" >> "$1"
   fi
 }
 add_line "$HOME/.zshrc" "source \"$ROOT/plugin/ai-terminal.zsh\""

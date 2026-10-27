@@ -43,7 +43,7 @@ def request(kind: str, payload: str, start: bool = False) -> str:
         _start_daemon()
         sock = _connect()
     if sock is None:
-        return "ERR: cannot reach the ai-terminal daemon"
+        return "ERR: cannot reach the Shelldon daemon"
     with sock:
         sock.settimeout(TIMEOUT)
         sock.sendall(f"{kind}\0{os.getcwd()}\0{payload}\0".encode())

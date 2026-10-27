@@ -1,4 +1,4 @@
-# Intelligence in Terminal (ai-terminal): SI help inside your normal zsh prompt.
+# Shelldon (Intelligence in Terminal): SI help inside your normal zsh prompt.
 #
 #   typing   grey "ghost" suggestion after the cursor: from your history instantly,
 #            from the SI after a short pause.  → or End accepts it.
@@ -25,7 +25,7 @@
 
 # Must stay POSIX so bash can parse it: bail out before any zsh-only syntax.
 if [ -z "$ZSH_VERSION" ]; then
-  echo "ai-terminal: needs zsh, but this shell isn't zsh. Run 'zsh' first." >&2
+  echo "shelldon: needs zsh, but this shell isn't zsh. Run 'zsh' first." >&2
   return 1 2>/dev/null || exit 1
 fi
 
@@ -41,7 +41,7 @@ typeset -g AIT_SUGGEST_DELAY=${AIT_SUGGEST_DELAY:-0.8}
 typeset -g AIT_SUGGEST_STYLE=${AIT_SUGGEST_STYLE:-fg=8}
 typeset -g AIT_CONFIRM=${AIT_CONFIRM:-risky}
 
-zmodload zsh/net/socket 2>/dev/null || { print -u2 "ai-terminal: zsh/net/socket unavailable"; return 1 }
+zmodload zsh/net/socket 2>/dev/null || { print -u2 "shelldon: zsh/net/socket unavailable"; return 1 }
 zmodload zsh/parameter 2>/dev/null
 zmodload zsh/datetime 2>/dev/null
 
@@ -59,19 +59,19 @@ _ait_daemon_spawn() {
 }
 
 _ait_daemon_start() {
-  [[ -x $AIT_PYTHON ]] || { print -u2 "ai-terminal: run $AIT_ROOT/install.sh first"; return 1 }
+  [[ -x $AIT_PYTHON ]] || { print -u2 "shelldon: run $AIT_ROOT/install.sh first"; return 1 }
   _ait_daemon_spawn
   local i
   for i in {1..40}; do
     [[ -S $AIT_SOCK ]] && return 0
     sleep 0.05
   done
-  print -u2 "ai-terminal: daemon did not start (see ~/Library/Logs/ai-terminal.log)"
+  print -u2 "shelldon: daemon did not start (see ~/Library/Logs/ai-terminal.log)"
   return 1
 }
 
 _ait_daemon_stop() {
-  # Stop only the daemon behind this socket, never other ai-terminal daemons.
+  # Stop only the daemon behind this socket, never other Shelldon daemons.
   local pid pids
   [[ -r $AIT_SOCK.pid ]] && pid=$(<$AIT_SOCK.pid)
   if [[ $pid == <-> ]] && ps -o command= -p $pid 2>/dev/null | grep -q -- '-m aitd'; then
@@ -99,7 +99,7 @@ _ait_send() {
 # _ait_request <type> <payload>  — synchronous: prints the reply, returns 1 on error.
 _ait_request() {
   local fd reply=
-  _ait_send "$1" "$2" start || { print "ERR: cannot reach the ai-terminal daemon"; return 1 }
+  _ait_send "$1" "$2" start || { print "ERR: cannot reach the Shelldon daemon"; return 1 }
   fd=$REPLY
   IFS= read -r -d '' -t $AIT_TIMEOUT -u $fd reply
   exec {fd}<&-
@@ -131,7 +131,7 @@ _ait_explain_widget() {
     zle -F $_ait_explain_fd 2>/dev/null; exec {_ait_explain_fd}<&-
   fi
   if ! _ait_send "explain:${COLUMNS:-80}" "$BUFFER" start; then
-    zle -M "Can't reach ai-terminal. Try: ait restart"
+    zle -M "Can't reach Shelldon. Try: ait restart"
     return
   fi
   _ait_explain_fd=$REPLY
@@ -177,7 +177,7 @@ _ait_generate_start() {
   _ait_cancel_suggest
   _ait_hide_ghost
   if ! _ait_send generate "$request" start; then
-    zle -M "Can't reach ai-terminal. Try: ait restart"
+    zle -M "Can't reach Shelldon. Try: ait restart"
     return
   fi
   fd=$REPLY

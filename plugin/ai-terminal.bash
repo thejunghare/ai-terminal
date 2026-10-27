@@ -1,4 +1,4 @@
-# Intelligence in Terminal (ai-terminal) for bash: SI help inside your normal bash prompt.
+# Shelldon (Intelligence in Terminal) for bash: SI help inside your normal bash prompt.
 #
 #   # ...    type a request in plain English after #, press Return: the SI writes the
 #            command. Safe ones run straight away; risky ones ask "Run it? y/n" first.
@@ -14,7 +14,7 @@
 
 # Must stay POSIX so other shells can parse it: bail out before any bash-only syntax.
 if [ -z "$BASH_VERSION" ]; then
-  echo "ai-terminal: ai-terminal.bash is for bash. In zsh, source ai-terminal.zsh instead." >&2
+  echo "shelldon: ai-terminal.bash is for bash. In zsh, source ai-terminal.zsh instead." >&2
   return 1 2>/dev/null || exit 1
 fi
 case $- in *i*) ;; *) return 0 ;; esac          # interactive shells only
@@ -211,7 +211,7 @@ if ! alias why >/dev/null 2>&1 && ! type -P why >/dev/null; then
 fi
 
 _ait_daemon_stop() {
-  # Stop only the daemon behind this socket, never other ai-terminal daemons.
+  # Stop only the daemon behind this socket, never other Shelldon daemons.
   local pid=
   [ -r "$AIT_SOCK.pid" ] && pid=$(cat "$AIT_SOCK.pid")
   if [ -n "$pid" ] && ps -o command= -p "$pid" 2>/dev/null | grep -q -- '-m aitd'; then
