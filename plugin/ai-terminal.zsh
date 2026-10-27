@@ -87,9 +87,12 @@ _ait_request() {
 typeset -g _ait_explain_fd=0
 
 _ait_print_above() {
-  # Print text above the prompt, keeping the line being edited intact.
+  # Print text above the prompt, keeping the line being edited intact. Called from
+  # a zle -F handler, so the prompt must be redrawn explicitly afterwards.
   zle -I
   print -r -- "$1"
+  zle reset-prompt
+  zle -R
 }
 
 _ait_explain_widget() {
