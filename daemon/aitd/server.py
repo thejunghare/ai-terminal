@@ -1,7 +1,8 @@
 """Unix-socket server the zsh plugin talks to.
 
 Wire protocol (kept trivial so zsh can speak it with zsocket, no JSON):
-  request:  <type>\\0<cwd>\\0<payload>\\0
+  request:  <type>[:<option>]\\0<cwd>\\0<payload>\\0
+            e.g. "explain:120" asks for output wrapped to 120 columns.
   response: UTF-8 text, then the server closes the connection.
             Errors are prefixed with "ERR: ".
 """
@@ -11,7 +12,7 @@ import os
 import signal
 import sys
 
-from . import __version__, explain, llm
+from . import __version__, explain, llm, suggest
 
 SOCK_PATH = os.environ.get("AIT_SOCK", os.path.expanduser("~/.ai-terminal.sock"))
 LOG_PATH = os.path.expanduser("~/Library/Logs/ai-terminal.log")
@@ -36,20 +37,26 @@ async def _read_request(reader: asyncio.StreamReader) -> list[str]:
 
 
 async def _dispatch(kind: str, cwd: str, payload: str) -> str:
+    kind, _, option = kind.partition(":")
     if kind == "ping":
         return f"pong {__version__} ({llm.active_provider()})"
     if kind == "models":
         return await llm.probe_nvidia_models()
     if kind == "explain":
-        return await explain.explain(payload, cwd)
+        return await explain.explain(payload, cwd, int(option) if option.isdigit() else 80)
+    if kind == "suggest":
+        return await suggest.suggest(payload, cwd)
     raise ValueError(f"unknown request type: {kind}")
 
 
 async def _handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
     try:
         kind, cwd, payload = await asyncio.wait_for(_read_request(reader), timeout=5)
-        log.info("request %s", kind)
+        if not kind.startswith("suggest"):          # suggestions fire on every pause
+            log.info("request %s", kind)
         reply = await _dispatch(kind, cwd, payload)
+    except asyncio.CancelledError:
+        reply = ""
     except llm.MissingKey as e:
         reply = f"ERR: {e}"
     except llm.LLMError as e:
@@ -61,6 +68,8 @@ async def _handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) ->
     try:
         writer.write(reply.encode())
         await writer.drain()
+    except (ConnectionError, OSError):
+        pass                    # the shell stopped waiting (e.g. user kept typing)
     finally:
         writer.close()
 

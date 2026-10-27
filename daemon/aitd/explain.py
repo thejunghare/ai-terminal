@@ -1,19 +1,21 @@
-from . import context, llm, prompts
+from . import context, llm, prompts, render, store
 
-_cache: dict[str, str] = {}
+_cache = store.DiskCache("explain")
 
 
-async def explain(command: str, cwd: str) -> str:
+async def explain(command: str, cwd: str, cols: int = 80) -> str:
     command = command.strip()
     if not command:
         return "Nothing to explain — type a command first."
     safe_cmd = context.redact(command)
-    if safe_cmd in _cache:
-        return _cache[safe_cmd]
-    text = await llm.complete(
-        "explain",
-        prompts.EXPLAIN_SYSTEM,
-        prompts.explain_user(safe_cmd, context.describe(cwd)),
-    )
-    _cache[safe_cmd] = text
-    return text
+    hit = _cache.get(safe_cmd)
+    if hit:
+        raw, model = hit
+    else:
+        raw, model = await llm.complete(
+            "explain",
+            prompts.EXPLAIN_SYSTEM,
+            prompts.explain_user(safe_cmd, context.describe(cwd)),
+        )
+        _cache.put(safe_cmd, [raw, model])
+    return render.render(command, raw, cols, model)

@@ -143,18 +143,28 @@ class _ModelUnavailable(LLMError):
     """This model can't answer for this account right now; try another one."""
 
 
+# Models that rejected the reasoning_effort parameter; we stop sending it to them.
+_no_reasoning_effort: set[str] = set()
+
+
 async def _nvidia_post(key: str, model: str, messages: list, max_tokens: int,
                        timeout: float) -> httpx.Response:
     client = _clients.get("nvidia") or _clients.setdefault(
         "nvidia", httpx.AsyncClient(base_url=NVIDIA_BASE_URL))
+    body = {"model": model, "max_tokens": max_tokens, "temperature": 0.2, "messages": messages}
+    # gpt-oss thinks before answering; "low" makes it answer several times faster.
+    low_effort = "gpt-oss" in model and model not in _no_reasoning_effort
+    if low_effort:
+        body["reasoning_effort"] = "low"
     try:
-        return await client.post(
-            "/chat/completions",
-            headers={"Authorization": f"Bearer {key}"},
-            json={"model": model, "max_tokens": max_tokens, "temperature": 0.2,
-                  "messages": messages},
-            timeout=timeout,
-        )
+        resp = await client.post("/chat/completions", json=body, timeout=timeout,
+                                 headers={"Authorization": f"Bearer {key}"})
+        if low_effort and resp.status_code in (400, 422):
+            _no_reasoning_effort.add(model)
+            del body["reasoning_effort"]
+            resp = await client.post("/chat/completions", json=body, timeout=timeout,
+                                     headers={"Authorization": f"Bearer {key}"})
+        return resp
     except httpx.TimeoutException as e:
         raise _ModelUnavailable(f"{model} did not answer within {timeout:.0f}s") from e
     except httpx.HTTPError as e:
@@ -170,9 +180,10 @@ def _nvidia_error(resp: httpx.Response, model: str) -> LLMError:
     return _ModelUnavailable(msg) if resp.status_code == 404 else LLMError(msg)
 
 
-async def _nvidia_call(key: str, model: str, system: str, user: str, timeout: float) -> str:
+async def _nvidia_call(key: str, model: str, system: str, user: str, timeout: float,
+                       max_tokens: int) -> str:
     messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
-    resp = await _nvidia_post(key, model, messages, NVIDIA_MAX_TOKENS, timeout)
+    resp = await _nvidia_post(key, model, messages, max_tokens, timeout)
     if resp.status_code != 200:
         raise _nvidia_error(resp, model)
     content = resp.json()["choices"][0]["message"].get("content") or ""
@@ -181,10 +192,15 @@ async def _nvidia_call(key: str, model: str, system: str, user: str, timeout: fl
     return content
 
 
-async def _nvidia(key: str, task: str, system: str, user: str) -> str:
-    preferred = _resolved_nvidia.get(task, MODELS["nvidia"][task])
-    candidates = [preferred] + [m for m in NVIDIA_FALLBACK_MODELS if m != preferred]
-    deadline = time.monotonic() + NVIDIA_TOTAL_BUDGET
+async def _nvidia(key: str, task: str, system: str, user: str) -> tuple[str, str]:
+    preferred = _resolved_nvidia.get(task) or _resolved_nvidia.get("explain") or MODELS["nvidia"][task]
+    if task == "suggest":
+        # Suggestions are best-effort and frequent: one model, short wait, no cascade.
+        candidates, budget, max_tokens = [preferred], 15.0, 512
+    else:
+        candidates = [preferred] + [m for m in NVIDIA_FALLBACK_MODELS if m != preferred]
+        budget, max_tokens = NVIDIA_TOTAL_BUDGET, NVIDIA_MAX_TOKENS
+    deadline = time.monotonic() + budget
     problems = []
     for model in candidates:
         remaining = deadline - time.monotonic()
@@ -192,13 +208,15 @@ async def _nvidia(key: str, task: str, system: str, user: str) -> str:
             break
         try:
             text = await _nvidia_call(key, model, system, user,
-                                      min(NVIDIA_ATTEMPT_TIMEOUT, remaining))
+                                      min(NVIDIA_ATTEMPT_TIMEOUT, remaining), max_tokens)
         except _ModelUnavailable as e:
             log.warning("%s", e)
             problems.append(str(e))
             continue
         _resolved_nvidia[task] = model
-        return text
+        return text, model
+    if task == "suggest":
+        raise LLMError("; ".join(problems) or "no suggestion")
     raise LLMError(
         "No NVIDIA model answered in time. Run `ait models` to see which work for "
         "your key. Tried: " + "; ".join(problems)
@@ -231,11 +249,12 @@ async def probe_nvidia_models() -> str:
             + "\n\nTo use one: export AIT_NVIDIA_EXPLAIN_MODEL=<model> in ~/.zshrc, then ait restart")
 
 
-async def complete(task: str, system: str, user: str, max_tokens: int = 600) -> str:
-    """Run one prompt for `task` ("explain" or "suggest") on the configured provider."""
+async def complete(task: str, system: str, user: str, max_tokens: int = 600) -> tuple[str, str]:
+    """Run one prompt for `task` ("explain" or "suggest"); returns (text, model used)."""
     provider, key = _provider()
     if provider == "anthropic":
-        text = await _anthropic(key, MODELS["anthropic"][task], system, user, max_tokens)
+        model = MODELS["anthropic"][task]
+        text = await _anthropic(key, model, system, user, max_tokens)
     else:
-        text = await _nvidia(key, task, system, user)
-    return _THINK.sub("", text).strip()
+        text, model = await _nvidia(key, task, system, user)
+    return _THINK.sub("", text).strip(), model
