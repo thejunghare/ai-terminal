@@ -4,9 +4,9 @@
 #            from the AI after a short pause.  → or End accepts it.
 #   Ctrl+E   on a typed command: explain it (first press still jumps to end of line).
 #            You can keep typing while it works; the answer prints above the prompt.
-#   # ...    type a request in plain English after #, press Return: the AI puts the
-#            command on the line. Press Return again to run it. Ctrl+G does the same
-#            for any line without the #.
+#   # ...    type a request in plain English after #, press Return: the AI writes the
+#            command. Safe ones run straight away; risky ones ask "Run it? y/n" first.
+#            Ctrl+G does the same for any line without the #.
 #   ait      helper command: ait start|stop|restart|status|key|models|suggest on|off|explain <cmd>|log
 #
 # Settings (set before sourcing):
@@ -15,6 +15,8 @@
 #   AIT_AI_SUGGEST      1 = ask the AI when history has none (default: 1)
 #   AIT_SUGGEST_DELAY   pause in seconds before asking the AI (default: 0.8)
 #   AIT_SUGGEST_STYLE   highlight for the ghost text          (default: fg=8)
+#   AIT_CONFIRM         risky = run safe AI commands at once, ask y/n for risky ones;
+#                       all = always ask                      (default: risky)
 #   AIT_SOCK            daemon socket path                   (default: ~/.ai-terminal.sock)
 #   AIT_PROVIDER        anthropic | nvidia                   (default: whichever has a key)
 
@@ -34,9 +36,17 @@ typeset -g AIT_SUGGEST=${AIT_SUGGEST:-1}
 typeset -g AIT_AI_SUGGEST=${AIT_AI_SUGGEST:-1}
 typeset -g AIT_SUGGEST_DELAY=${AIT_SUGGEST_DELAY:-0.8}
 typeset -g AIT_SUGGEST_STYLE=${AIT_SUGGEST_STYLE:-fg=8}
+typeset -g AIT_CONFIRM=${AIT_CONFIRM:-risky}
 
 zmodload zsh/net/socket 2>/dev/null || { print -u2 "ai-terminal: zsh/net/socket unavailable"; return 1 }
 zmodload zsh/parameter 2>/dev/null
+zmodload zsh/datetime 2>/dev/null
+
+# Seconds since $1 (an $EPOCHREALTIME value), formatted like "1.8s", in REPLY.
+_ait_elapsed() {
+  local -F secs=$(( EPOCHREALTIME - $1 ))
+  REPLY=$(printf '%.1fs' $secs)
+}
 
 # --- daemon management -------------------------------------------------------
 
@@ -58,8 +68,18 @@ _ait_daemon_start() {
 }
 
 _ait_daemon_stop() {
-  pkill -f "python.* -m aitd" 2>/dev/null
-  rm -f $AIT_SOCK
+  # Stop only the daemon behind this socket, never other ai-terminal daemons.
+  local pid pids
+  [[ -r $AIT_SOCK.pid ]] && pid=$(<$AIT_SOCK.pid)
+  if [[ $pid == <-> ]] && ps -o command= -p $pid 2>/dev/null | grep -q -- '-m aitd'; then
+    kill $pid 2>/dev/null
+  else                                   # daemon from before pid files existed
+    pids=(${(f)"$(lsof -t $AIT_SOCK 2>/dev/null)"})
+    for pid in $pids; do
+      ps -o command= -p $pid 2>/dev/null | grep -q -- '-m aitd' && kill $pid 2>/dev/null
+    done
+  fi
+  rm -f $AIT_SOCK $AIT_SOCK.pid
 }
 
 # _ait_send <type> <payload> [start]  — sends a request; the socket fd is left in REPLY.
@@ -87,7 +107,7 @@ _ait_request() {
 
 # --- explain (Ctrl+E), asynchronous -------------------------------------------
 
-typeset -g _ait_explain_fd=0
+typeset -g _ait_explain_fd=0 _ait_explain_t0=0
 
 _ait_print_above() {
   # Print text above the prompt, keeping the line being edited intact. Called from
@@ -112,6 +132,7 @@ _ait_explain_widget() {
     return
   fi
   _ait_explain_fd=$REPLY
+  _ait_explain_t0=$EPOCHREALTIME
   zle -F -w $_ait_explain_fd _ait_explain_ready
   zle -M "Explaining…"
 }
@@ -128,7 +149,8 @@ _ait_explain_ready() {
   elif [[ $out == ERR:* ]]; then
     _ait_print_above $'\n  \e[33m'"${out#ERR: }"$'\e[0m\n'
   else
-    _ait_print_above $'\n'"$out"$'\n'
+    _ait_elapsed $_ait_explain_t0
+    _ait_print_above $'\n'"$out"$'\n\n  \e[2m'"$REPLY"$'\e[0m\n'
   fi
 }
 
@@ -137,51 +159,77 @@ zle -N _ait_explain_ready
 bindkey "$AIT_EXPLAIN_KEY" ait-explain
 
 # --- ask in plain English: "# request" + Return, or Ctrl+G --------------------
-# The AI's command replaces the line; nothing runs until you press Return again.
+# The AI's command replaces the line. Safe commands run at once; risky ones (and
+# every command with AIT_CONFIRM=all) wait for y. Questions back from the AI never run.
+# This waits in place (you just pressed Return and want the result); Ctrl+C or Esc cancels.
 
-typeset -g _ait_generate_fd=0 _ait_generate_for=
-
-_ait_generate_start() {
-  if (( _ait_generate_fd )); then
-    zle -F $_ait_generate_fd 2>/dev/null; exec {_ait_generate_fd}<&-
-  fi
+_ait_run_line() {
   _ait_cancel_suggest
   _ait_hide_ghost
-  if ! _ait_send generate "$BUFFER" start; then
+  zle .accept-line
+}
+
+_ait_generate_start() {
+  local request=$BUFFER fd key out= cmd risk= t0=$EPOCHREALTIME
+  _ait_cancel_suggest
+  _ait_hide_ghost
+  if ! _ait_send generate "$request" start; then
     zle -M "Can't reach ai-terminal. Try: ait restart"
     return
   fi
-  _ait_generate_fd=$REPLY
-  _ait_generate_for=$BUFFER
-  zle -F -w $_ait_generate_fd _ait_generate_ready
+  fd=$REPLY
   zle -M "Thinking…"
-}
-
-_ait_generate_ready() {
-  local fd=$1 out= cmd risk=
-  zle -F $fd
+  zle -R
+  local first= cancelled=0
+  setopt localoptions localtraps
+  trap 'cancelled=1' INT                           # Ctrl+C arrives as a signal, not a key
+  while true; do                                   # wait for the answer
+    IFS= read -r -k 1 -t 0.1 -u $fd first && break
+    if (( cancelled )) || { read -k 1 -t 0 key && [[ $key == $'\e' ]] }; then
+      exec {fd}<&-
+      zle -M "Cancelled."
+      return
+    fi
+    if (( EPOCHREALTIME - t0 > AIT_TIMEOUT )); then
+      exec {fd}<&-
+      zle -M "No answer after ${AIT_TIMEOUT}s. Try again."
+      return
+    fi
+  done
   IFS= read -r -d '' -u $fd out
+  out=$first$out
   exec {fd}<&-
-  _ait_generate_fd=0
   if [[ -z $out || $out == ERR:* ]]; then
     zle -M "${${out#ERR: }:-No answer. Try again.}"
     return
   fi
-  if [[ $BUFFER != "$_ait_generate_for" ]]; then   # you moved on; don't overwrite it
-    zle -M ""
-    return
-  fi
   cmd=${out%%$'\n'*}
   [[ $out == *$'\n'* ]] && risk=${out#*$'\n'}
+  _ait_elapsed $t0
+  local took=$REPLY
   BUFFER=$cmd
   CURSOR=${#BUFFER}
   _ait_seen=$BUFFER                                # no ghost over the AI's command
-  if [[ -n $risk ]]; then
-    zle -M "⚠︎ $risk Return to run, Ctrl+C to cancel."
-  else
-    zle -M "Return to run, Ctrl+C to cancel."
+
+  if [[ $cmd == \#* ]]; then                       # the AI is asking for more detail
+    zle -M "Needs more detail. Edit the line and press Return.  $took"
+    return
   fi
+  if [[ -z $risk && $AIT_CONFIRM != all ]]; then
+    zle -M ""
+    _ait_print_above $'  \e[2m'"AI · $took"$'\e[0m'
+    _ait_run_line
+    return
+  fi
+  zle -M "${risk:+⚠︎ $risk }Run it? y/n  $took"
   zle -R
+  read -k 1 key
+  if [[ $key == [yY] ]]; then
+    zle -M ""
+    _ait_run_line
+  else
+    zle -M "Not run. Edit it, or press Return to run it."
+  fi
 }
 
 _ait_generate_widget() {
@@ -193,7 +241,6 @@ _ait_generate_widget() {
 }
 
 zle -N ait-generate _ait_generate_widget
-zle -N _ait_generate_ready
 bindkey '^G' ait-generate
 
 # --- ghost suggestions -------------------------------------------------------

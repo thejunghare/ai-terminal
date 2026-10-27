@@ -3,7 +3,7 @@
 AI help inside your **native macOS terminal** (Terminal.app or iTerm2). It's a zsh plugin, not a new app.
 
 - **Suggestions as you type**: grey "ghost" text after the cursor, from your history instantly and from the AI after a short pause. Press `→` to accept.
-- **Ask in plain English**: type `# make a new folder here` and press Return. The AI puts the command on your prompt line; press Return again to run it.
+- **Ask in plain English**: type `# make a new folder here` and press Return. Safe commands run right away; risky ones ask `y/n` first.
 - **Explain** any command before you run it: press `Ctrl+E`. You can keep typing; the breakdown appears above your prompt.
 - *(coming)* `why` explains your last failed command
 
@@ -35,18 +35,22 @@ Start the line with `#`, say what you want, and press Return:
 
 ```
 % # make a new folder in here
-```
-
-The line turns into the command, ready to run. Nothing happens until you press Return again (or `Ctrl+C` to cancel):
-
-```
+  AI · 1.4s
 % mkdir -p new-folder
-Return to run, Ctrl+C to cancel.
 ```
 
-Commands that delete, overwrite, need `sudo`, change permissions recursively, stop processes or run downloaded scripts show a warning first, e.g. `⚠︎ Deletes files. They skip the Trash.` This check also runs locally, so it doesn't rely on the AI flagging it.
+The AI writes the command and checks its risk:
 
-`Ctrl+G` does the same for a line without the `#`.
+- **Safe commands run straight away**, with the response time shown above.
+- **Risky commands ask first.** Deleting, overwriting, `sudo`, recursive permission changes, stopping processes and running downloaded scripts show the reason and wait for you:
+  ```
+  % rm old.txt
+  ⚠︎ Deletes files. They skip the Trash. Run it? y/n  1.2s
+  ```
+  `y` runs it; any other key leaves it on the line, not run, for you to edit.
+- **If the request is unclear**, the AI asks back with a `#` line, which never runs.
+
+The risk check also runs locally, so it doesn't rely on the AI flagging it. `Ctrl+C` or `Esc` cancels while it's thinking. `Ctrl+G` does the same for a line without the `#`. To be asked about every command, set `AIT_CONFIRM=all`.
 
 ### Suggestions
 
@@ -81,7 +85,7 @@ Press `Ctrl+E`:
 
 The summary is bold, meanings are dimmed, and only warnings use colour, all in your terminal's own theme (set `NO_COLOR=1` for none).
 
-If your cursor is in the middle of the line, the first press jumps to the end, as `Ctrl+E` normally does; press it again to explain. Explanations are cached on disk, so asking again is instant.
+The response time is shown underneath. If your cursor is in the middle of the line, the first press jumps to the end, as `Ctrl+E` normally does; press it again to explain. Explanations are cached on disk, so asking again is instant.
 
 ### Commands
 
@@ -106,6 +110,7 @@ Put these above the `source` line in `~/.zshrc`:
 | `AIT_AI_SUGGEST` | `1` | `0` keeps suggestions to your history only |
 | `AIT_SUGGEST_DELAY` | `0.8` | seconds of pause before asking the AI |
 | `AIT_SUGGEST_STYLE` | `fg=8` | how the ghost text is drawn |
+| `AIT_CONFIRM` | `risky` | `all` asks before running every AI-written command |
 
 ## How it works
 
