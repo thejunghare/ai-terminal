@@ -66,7 +66,10 @@ _NOT_CHAT = re.compile(
     r"asr|tts|riva|whisper|canary|parakeet|audio|speech|detect|pii|deplot|kosmos|paligemma|"
     r"fuyu|cosmos|sdxl|flux|diffusion|bge|translate", re.IGNORECASE)
 # Name hints for small, fast models, best first; these answer quickest on the free tier.
-_FAST_HINTS = ["flash", "nano", "mini", "8b", "7b", "9b", "12b", "small", "20b", "instruct"]
+_FAST_HINTS = ["nano", "mini", "flash", "8b", "7b", "9b", "12b", "small", "20b", "instruct"]
+# A model that was busy is skipped for a while; one missing from the account for longer.
+COOLDOWN_BUSY, COOLDOWN_MISSING = 120.0, 3600.0
+_nvidia_cooldown: dict[str, float] = {}     # model -> time.monotonic() it may be tried again
 
 _KEY_SOURCES = {
     "anthropic": ("ANTHROPIC_API_KEY", "ai-terminal"),
@@ -163,6 +166,10 @@ async def _anthropic(key: str, model: str, system: str, user: str, max_tokens: i
 class _ModelUnavailable(LLMError):
     """This model can't answer for this account right now; try another one."""
 
+    def __init__(self, msg: str, missing: bool = False):
+        super().__init__(msg)
+        self.missing = missing          # not on this account at all, rather than busy
+
 
 # Models that rejected the reasoning_effort parameter; we stop sending it to them.
 _no_reasoning_effort: set[str] = set()
@@ -211,19 +218,25 @@ def _nvidia_preferred(task: str) -> str:
             or _nvidia_saved.get("model") or MODELS["nvidia"][task])
 
 
-async def _nvidia_candidates(key: str, preferred: str) -> list[str]:
+async def _nvidia_candidates(key: str, preferred: str, skip_cooling: bool = True) -> list[str]:
+    """Models to try in order: the preferred one, ones that worked before, then the catalog."""
     catalog = await _nvidia_catalog(key)
-    if not catalog:                     # couldn't list: fall back to the built-in guesses
-        return list(dict.fromkeys([preferred, *NVIDIA_FALLBACK_MODELS]))
-    listed = set(catalog)
-    known = [m for m in NVIDIA_FALLBACK_MODELS if m in listed]
-    return list(dict.fromkeys([preferred, *known, *_rank_chat_models(catalog)]))
+    worked = [m for m in (_nvidia_saved.get("working") or []) if not catalog or m in catalog]
+    rest = _rank_chat_models(catalog) if catalog else NVIDIA_FALLBACK_MODELS
+    models = list(dict.fromkeys([preferred, *worked, *rest]))
+    if skip_cooling:
+        now = time.monotonic()
+        models = [m for m in models if _nvidia_cooldown.get(m, 0) <= now] or models
+    return models
 
 
-def _remember_nvidia(model: str) -> None:
+def _remember_nvidia(model: str, others: list[str] | None = None) -> None:
+    """Use `model` from now on, and keep a short list of models known to work."""
     _resolved_nvidia["explain"] = _resolved_nvidia["generate"] = _resolved_nvidia["why"] = model
-    if _nvidia_saved.get("model") != model:
+    working = list(dict.fromkeys([model, *(others or []), *(_nvidia_saved.get("working") or [])]))[:6]
+    if _nvidia_saved.get("model") != model or _nvidia_saved.get("working") != working:
         _nvidia_saved.put("model", model)
+        _nvidia_saved.put("working", working)
 
 
 async def _nvidia_post(key: str, model: str, messages: list, max_tokens: int,
@@ -251,11 +264,24 @@ async def _nvidia_post(key: str, model: str, messages: list, max_tokens: int,
 
 def _nvidia_error(resp: httpx.Response, model: str) -> LLMError:
     try:
-        detail = resp.json().get("detail") or resp.json().get("error") or resp.text
-    except ValueError:
+        body = resp.json()
+        detail = body.get("detail") or body.get("error") or body.get("message") or resp.text
+    except (ValueError, AttributeError):
         detail = resp.text
-    msg = f"NVIDIA API error {resp.status_code} ({model}): {str(detail)[:200]}"
-    return _ModelUnavailable(msg) if resp.status_code == 404 else LLMError(msg)
+    if isinstance(detail, dict):
+        detail = detail.get("message") or detail
+    detail = str(detail)[:120]
+    code = resp.status_code
+    log.warning("NVIDIA %s from %s: %s", code, model, detail)
+    if code == 404:
+        return _ModelUnavailable(f"{model}: not available for your account", missing=True)
+    if code == 429:
+        return _ModelUnavailable(f"{model}: rate limited")
+    if code in (408, 500, 502, 503, 504):     # e.g. 503 "ResourceExhausted": that model is full
+        return _ModelUnavailable(f"{model}: busy right now")
+    if code in (401, 403):
+        return LLMError("NVIDIA rejected your key. Create a new one at build.nvidia.com, then run `ait key`.")
+    return LLMError(f"NVIDIA API error {code} ({model}): {detail}")
 
 
 async def _nvidia_call(key: str, model: str, system: str, user: str, timeout: float,
@@ -290,6 +316,7 @@ async def _nvidia(key: str, task: str, system: str, user: str) -> tuple[str, str
         except _ModelUnavailable as e:
             log.warning("%s", e)
             problems.append(str(e))
+            _nvidia_cooldown[model] = time.monotonic() + (COOLDOWN_MISSING if e.missing else COOLDOWN_BUSY)
             continue
         if task == "suggest":
             _resolved_nvidia["suggest"] = model
@@ -299,13 +326,14 @@ async def _nvidia(key: str, task: str, system: str, user: str) -> tuple[str, str
     if task == "suggest":
         raise LLMError("; ".join(problems) or "no suggestion")
     raise LLMError(
-        "No NVIDIA model answered in time; the free tier may be busy. Run `ait models` "
-        "to find one that works, or use an Anthropic key. Tried: " + "; ".join(problems[:3])
+        f"NVIDIA's free models are busy right now (tried {len(problems)}). Try again in a "
+        "minute, run `ait models` to find others, or use an Anthropic key (`ait key`)."
     )
 
 
-PROBE_LIMIT = 8            # models `ait models` tries
-PROBE_PARALLEL = 4         # at once: enough to be quick, few enough not to trip rate limits
+PROBE_LIMIT = 12           # models `ait models` tries
+PROBE_PARALLEL = 6         # at once: enough to be quick, few enough not to trip rate limits
+PROBE_TIMEOUT = 12.0       # "reply ok" takes a second or two on a model that isn't queued
 
 
 async def probe_nvidia_models() -> str:
@@ -315,7 +343,7 @@ async def probe_nvidia_models() -> str:
         raise MissingKey("No NVIDIA key saved. Run `ait key`.")
     key = keys["nvidia"]
     catalog = await _nvidia_catalog(key)
-    models = (await _nvidia_candidates(key, _nvidia_preferred("explain")))[:PROBE_LIMIT]
+    models = (await _nvidia_candidates(key, _nvidia_preferred("explain"), skip_cooling=False))[:PROBE_LIMIT]
     messages = [{"role": "user", "content": "Reply with the word ok."}]
     gate = asyncio.Semaphore(PROBE_PARALLEL)
 
@@ -323,17 +351,13 @@ async def probe_nvidia_models() -> str:
         async with gate:
             start = time.monotonic()
             try:
-                resp = await _nvidia_post(key, model, messages, 64, NVIDIA_ATTEMPT_TIMEOUT)
+                resp = await _nvidia_post(key, model, messages, 64, min(PROBE_TIMEOUT, NVIDIA_ATTEMPT_TIMEOUT))
             except LLMError as e:
-                return model, None, f"✗ {e}".replace(f"{model} ", "")
+                return model, None, "✗ " + str(e).replace(f"{model} ", "").replace(f"{model}: ", "")
             took = time.monotonic() - start
             if resp.status_code == 200:
                 return model, took, f"✓ works ({took:.1f}s)"
-            if resp.status_code == 404:
-                return model, None, "✗ not available for your account"
-            if resp.status_code == 429:
-                return model, None, "✗ rate limited, try again in a minute"
-            return model, None, f"✗ HTTP {resp.status_code}"
+            return model, None, "✗ " + str(_nvidia_error(resp, model)).replace(f"{model}: ", "")
 
     results = await asyncio.gather(*(probe(m) for m in models))
     width = max(len(m) for m in models)
@@ -343,8 +367,10 @@ async def probe_nvidia_models() -> str:
     working = sorted((took, m) for m, took, _ in results if took is not None)
     if working:
         best = working[0][1]
-        _remember_nvidia(best)
+        _remember_nvidia(best, [m for _, m in working])
         tail = f"Using {best} from now on (fastest that answered)."
+        if len(working) > 1:
+            tail += f"\nIf it's busy, Shelldon switches to the other {len(working) - 1} that worked."
         if os.environ.get("AIT_NVIDIA_EXPLAIN_MODEL"):
             tail += "\nNote: AIT_NVIDIA_EXPLAIN_MODEL is set and takes priority. Remove it to use this one."
     else:

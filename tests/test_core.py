@@ -226,6 +226,8 @@ class NvidiaModelsTest(unittest.TestCase):
         os.environ.pop("ANTHROPIC_API_KEY", None)
         os.environ["NVIDIA_API_KEY"] = "nvapi-test"
         self.asked = []
+        self.busy = set()
+        llm._nvidia_cooldown.clear()
 
         def handler(request):
             import httpx, json
@@ -237,6 +239,10 @@ class NvidiaModelsTest(unittest.TestCase):
                 raise httpx.ReadTimeout("busy", request=request)
             if model == "meta/llama-3.1-8b-instruct":
                 return httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}]})
+            if model in self.busy:      # what a real key got: the model's worker is full
+                return httpx.Response(503, json={"detail": {
+                    "message": "ResourceExhausted: Worker local total request limit reached (16/16)",
+                    "type": "Service Unavailable", "code": 503}})
             return httpx.Response(404, json={"detail": "Function not found for account"})
 
         import httpx
@@ -263,6 +269,27 @@ class NvidiaModelsTest(unittest.TestCase):
         self.assertEqual(self.asked[0], "openai/gpt-oss-20b")       # default tried first
         llm._resolved_nvidia.clear()
         self.assertEqual(llm._nvidia_preferred("why"), "meta/llama-3.1-8b-instruct")  # survives restart
+
+    def test_busy_model_is_skipped_not_fatal(self):
+        llm._nvidia_saved.put("model", "qwen/qwen3-235b-a22b")
+        self.busy.add("qwen/qwen3-235b-a22b")
+        text, model = asyncio.run(llm.complete("generate", "sys", "user"))
+        self.assertEqual(model, "meta/llama-3.1-8b-instruct")
+        self.assertEqual(self.asked[0], "qwen/qwen3-235b-a22b")       # tried, was busy, moved on
+        self.asked.clear()
+        llm._resolved_nvidia.clear()
+        llm._nvidia_saved.put("model", "qwen/qwen3-235b-a22b")
+        asyncio.run(llm.complete("generate", "sys", "user"))
+        self.assertNotIn("qwen/qwen3-235b-a22b", self.asked)          # cooling down: not retried
+
+    def test_all_busy_gives_a_plain_message(self):
+        self.busy.update(self.CATALOG + ["meta/llama-3.1-8b-instruct"])
+        self.CATALOG = [m for m in self.CATALOG if m != "meta/llama-3.1-8b-instruct"]
+        llm._nvidia_models.clear()
+        with self.assertRaises(llm.LLMError) as ctx:
+            asyncio.run(llm.complete("generate", "sys", "user"))
+        self.assertIn("busy right now", str(ctx.exception))
+        self.assertNotIn("{", str(ctx.exception))                       # no raw JSON
 
     def test_env_setting_wins_over_remembered_model(self):
         llm._nvidia_saved.put("model", "meta/llama-3.1-8b-instruct")
