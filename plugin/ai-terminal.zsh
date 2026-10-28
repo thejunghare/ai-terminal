@@ -9,7 +9,7 @@
 #            Ctrl+G does the same for any line without the #.
 #   why      after a command fails: explains why, and puts the likely fix on the prompt.
 #            Also takes output from a pipe:  make 2>&1 | why
-#   ait      helper command: ait start|stop|restart|status|key|models|suggest on|off|explain <cmd>|why|log
+#   ait      helper command: ait start|stop|restart|status|key|models|suggest on|off|explain <cmd>|why|log|doctor|update
 #
 # Settings (set before sourcing):
 #   AIT_EXPLAIN_KEY     key binding for explain              (default: ^E)
@@ -40,6 +40,7 @@ typeset -g AIT_AI_SUGGEST=${AIT_AI_SUGGEST:-1}
 typeset -g AIT_SUGGEST_DELAY=${AIT_SUGGEST_DELAY:-0.8}
 typeset -g AIT_SUGGEST_STYLE=${AIT_SUGGEST_STYLE:-fg=8}
 typeset -g AIT_CONFIRM=${AIT_CONFIRM:-risky}
+export SHELLDON_PLUGIN=zsh                     # lets `ait doctor` see the plugin loaded
 
 zmodload zsh/net/socket 2>/dev/null || { print -u2 "shelldon: zsh/net/socket unavailable"; return 1 }
 zmodload zsh/parameter 2>/dev/null
@@ -501,6 +502,7 @@ ait() {
         && print "Saved $provider key to Keychain (service: $service)." && _ait_daemon_stop ;;
     models)  _ait_request models "" ;;
     log)     tail -n 50 ~/Library/Logs/ai-terminal.log ;;
-    *)       print "usage: ait start|stop|restart|status|key|models|suggest on|history|off|explain <command>|why|log" ;;
+    doctor|update) $AIT_ROOT/bin/ait "$@" ;;
+    *)       print "usage: ait start|stop|restart|status|key|models|suggest on|history|off|explain <command>|why|log|doctor|update" ;;
   esac
 }

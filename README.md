@@ -70,7 +70,7 @@ git clone https://github.com/thejunghare/shelldon.git ~/shelldon
 ~/shelldon/install.sh
 ```
 
-The installer hooks the plugin into both zsh (`~/.zshrc`) and bash (`~/.bashrc` and your login profile), so whichever shell you open is ready. Open a new terminal tab, then save an API key:
+**This is a one-time setup.** The installer hooks Shelldon into both zsh (`~/.zshrc`) and bash (`~/.bashrc` and your login profile) and puts the `ait` command in `~/.local/bin`, so every new terminal tab is ready by itself. Open a new tab, then save an API key:
 
 ```bash
 ait key        # paste the key; it goes into the macOS Keychain
@@ -78,6 +78,9 @@ ait status     # check it worked
 ```
 
 See [API keys and models](#api-keys-and-models) for where to get a key.
+
+**Updating:** `ait update` pulls the latest version and restarts the daemon. No need to run `install.sh` again.
+**Something not working?** `ait doctor` checks your setup and says how to fix each problem.
 
 ## zsh or bash?
 
@@ -153,6 +156,8 @@ Type a command, **don't press Enter**, press `Ctrl+E`. If the cursor is mid-line
 | `ait why` | Same as `why`, if another `why` command already exists |
 | `ait start` / `stop` / `restart` | Manage the background daemon (it starts automatically) |
 | `ait log` | Show the daemon log |
+| `ait doctor` | Check the setup: Python, shell, startup files, PATH, API key, daemon |
+| `ait update` | Update to the latest version and restart |
 
 ## API keys and models
 

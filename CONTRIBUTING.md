@@ -8,6 +8,7 @@ Thanks for wanting to help! Shelldon is small on purpose, so it's easy to find y
 |---|---|
 | `plugin/ai-terminal.zsh` | The zsh side: key bindings, ghost suggestions, `why`, `ait` command |
 | `plugin/ai-terminal.bash` | The bash side: `# requests` via `PROMPT_COMMAND`, `why`, `ait`; keys on bash 4+ |
+| `bin/ait` | The `ait` command as an executable (linked into `~/.local/bin`); the plugins hand most subcommands to it |
 | `daemon/aitd/client.py` | Tiny socket client the bash plugin uses (keep its imports light) |
 | `daemon/aitd/` | The Python daemon: talks to the model providers |
 | `daemon/aitd/prompts.py` | Every prompt sent to the model |

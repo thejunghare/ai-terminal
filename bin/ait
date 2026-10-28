@@ -1,0 +1,131 @@
+#!/usr/bin/env bash
+# Shelldon's `ait` command as a real executable, so it works in any shell and even
+# when the plugin isn't loaded. install.sh links it into ~/.local/bin.
+# `why` and suggestions need the shell plugin; inside zsh or bash the plugin's own
+# `ait` function takes over and hands everything else to this script.
+# Must stay compatible with macOS's bash 3.2.
+
+set -u
+ME=$0
+while [ -L "$ME" ]; do                 # follow the ~/.local/bin symlink back to the repo
+  LINK=$(readlink "$ME")
+  case $LINK in /*) ME=$LINK ;; *) ME=$(dirname "$ME")/$LINK ;; esac
+done
+AIT_ROOT=$(cd "$(dirname "$ME")/.." && pwd)
+AIT_SOCK=${AIT_SOCK:-$HOME/.ai-terminal.sock}
+AIT_PYTHON=${AIT_PYTHON:-$AIT_ROOT/.venv/bin/python}
+LOG=$HOME/Library/Logs/ai-terminal.log
+
+call() {   # call <type> [start] — payload on stdin
+  [ -x "$AIT_PYTHON" ] || { echo "ERR: run $AIT_ROOT/install.sh first"; return 1; }
+  AIT_SOCK=$AIT_SOCK PYTHONPATH="$AIT_ROOT/daemon" "$AIT_PYTHON" -m aitd.client "$1" ${2:+--start}
+}
+
+stop_daemon() {
+  # Stop only the daemon behind this socket, never other Shelldon daemons.
+  local pid=
+  [ -r "$AIT_SOCK.pid" ] && pid=$(cat "$AIT_SOCK.pid")
+  if [ -n "$pid" ] && ps -o command= -p "$pid" 2>/dev/null | grep -q -- '-m aitd'; then
+    kill "$pid" 2>/dev/null
+  fi
+  rm -f "$AIT_SOCK" "$AIT_SOCK.pid"
+}
+
+cols() { echo "${COLUMNS:-$(tput cols 2>/dev/null || echo 80)}"; }
+
+ok()   { printf '  \033[32m✓\033[0m %s\n' "$1"; }
+bad()  { printf '  \033[33m✗\033[0m %s\n' "$1"; [ -n "${2:-}" ] && printf '      → %s\n' "$2"; PROBLEMS=$((PROBLEMS + 1)); }
+
+doctor() {
+  PROBLEMS=0
+  echo "Shelldon doctor"
+  echo
+  if ( "$AIT_PYTHON" -c 'import anthropic, httpx' ) >/dev/null 2>&1; then
+    ok "Python environment ($AIT_ROOT/.venv)"
+  else
+    bad "Python environment is missing or broken" "run: $AIT_ROOT/install.sh"
+  fi
+
+  local login_shell=${SHELL##*/}
+  case $login_shell in
+    zsh)  ok "Login shell is zsh (all features)" ;;
+    bash) ok "Login shell is bash (no ghost suggestions; Ctrl+E/Ctrl+G need bash 4+)" ;;
+    *)    bad "Login shell is $login_shell, which Shelldon doesn't support" "chsh -s /bin/zsh" ;;
+  esac
+
+  local f found
+  for f in .zshrc .bashrc .bash_profile .bash_login .profile; do
+    if grep -qs "$AIT_ROOT/plugin/ai-terminal" "$HOME/$f"; then found="${found:+$found, }~/$f"; fi
+  done
+  if [ -n "${found:-}" ]; then ok "Loads automatically from $found"
+  else bad "Not in any shell startup file, so new tabs won't load it" "run: $AIT_ROOT/install.sh"; fi
+
+  case ${SHELLDON_PLUGIN:-} in
+    zsh|bash) ok "Plugin is loaded in this terminal ($SHELLDON_PLUGIN)" ;;
+    *)        bad "Plugin isn't loaded in this terminal" "open a new tab (or: source ~/.zshrc)" ;;
+  esac
+
+  case ":$PATH:" in
+    *":$HOME/.local/bin:"*) ok "ait is on your PATH (~/.local/bin)" ;;
+    *) bad "~/.local/bin isn't on your PATH" "open a new tab after install.sh" ;;
+  esac
+
+  if [ -n "${ANTHROPIC_API_KEY:-}${NVIDIA_API_KEY:-}" ]; then
+    ok "API key found in the environment"
+  elif security find-generic-password -s ai-terminal >/dev/null 2>&1 \
+       || security find-generic-password -s ai-terminal-nvidia >/dev/null 2>&1; then
+    ok "API key found in the Keychain"
+  else
+    bad "No API key saved" "run: ait key"
+  fi
+
+  local pong
+  if pong=$(call ping start </dev/null 2>/dev/null); then ok "Daemon answers: $pong"
+  else bad "Daemon doesn't answer: ${pong#ERR: }" "run: ait restart, then ait log"; fi
+
+  echo
+  if [ "$PROBLEMS" -eq 0 ]; then echo "All good."; else echo "$PROBLEMS problem(s) found."; fi
+  [ "$PROBLEMS" -eq 0 ]
+}
+
+update() {
+  cd "$AIT_ROOT" || return 1
+  echo "→ Updating $AIT_ROOT"
+  git pull --ff-only || { echo "Couldn't update cleanly. Check: git -C \"$AIT_ROOT\" status"; return 1; }
+  "$AIT_ROOT/install.sh" --quiet || return 1
+  stop_daemon
+  call ping start </dev/null >/dev/null && echo "Updated and restarted. Open a new tab to load the new plugin."
+}
+
+case ${1:-} in
+  start)   call ping start </dev/null >/dev/null && echo "started" ;;
+  stop)    stop_daemon; echo "stopped" ;;
+  restart) stop_daemon; call ping start </dev/null >/dev/null && echo "restarted" ;;
+  status)  call ping start </dev/null; echo ;;
+  models)  call models start </dev/null; echo ;;
+  explain) shift; printf '%s' "$*" | call "explain:$(cols)" start; echo ;;
+  log)     tail -n 50 "$LOG" ;;
+  doctor)  doctor ;;
+  update)  update ;;
+  key)
+    # The provider is taken from the key itself (nvapi-... is NVIDIA); the
+    # optional argument only matters for keys without a known prefix.
+    provider=${2:-}
+    read -rs -p "API key (Anthropic sk-ant-... or NVIDIA nvapi-...): " key; echo
+    [ -n "$key" ] || { echo "No key entered." >&2; exit 1; }
+    case $key in
+      nvapi-*)  provider=nvidia ;;
+      sk-ant-*) provider=anthropic ;;
+    esac
+    case ${provider:-anthropic} in
+      anthropic) provider=anthropic service=ai-terminal ;;
+      nvidia)    service=ai-terminal-nvidia ;;
+      *)         echo "usage: ait key [anthropic|nvidia]" >&2; exit 1 ;;
+    esac
+    security add-generic-password -U -s "$service" -a "$USER" -w "$key" \
+      && echo "Saved $provider key to Keychain (service: $service)." && stop_daemon ;;
+  why|suggest)
+    echo "ait $1 needs the shell plugin, which isn't loaded here. Run: ait doctor" >&2; exit 1 ;;
+  *)
+    echo "usage: ait start|stop|restart|status|key|models|explain <command>|why|log|doctor|update" ;;
+esac

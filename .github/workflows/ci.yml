@@ -20,6 +20,6 @@ jobs:
       - name: zsh plugin syntax
         run: zsh -n plugin/ai-terminal.zsh
       - name: bash plugin syntax (macOS bash 3.2 and Homebrew-era bash)
-        run: /bin/bash --version | head -1 && /bin/bash -n plugin/ai-terminal.bash && bash -n plugin/ai-terminal.bash
+        run: /bin/bash --version | head -1 && /bin/bash -n plugin/ai-terminal.bash && /bin/bash -n bin/ait && bash -n plugin/ai-terminal.bash
       - name: Shell scripts syntax
         run: bash -n install.sh && bash -n scripts/setup-github.sh

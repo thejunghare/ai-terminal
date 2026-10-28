@@ -6,7 +6,7 @@
 #            Also takes output from a pipe:  make 2>&1 | why
 #   Ctrl+E   (bash 4+) explain the typed command; the first press still jumps to end of line
 #   Ctrl+G   (bash 4+) turn the typed line into a command, without running it
-#   ait      helper command: ait start|stop|restart|status|key|models|explain <cmd>|why|log
+#   ait      helper command: ait start|stop|restart|status|key|models|explain <cmd>|why|log|doctor|update
 #
 # Works with the bash 3.2 that ships with macOS; the key bindings need bash 4+
 # (brew install bash). Ghost suggestions need zsh: readline can't draw them.
@@ -25,6 +25,7 @@ AIT_PYTHON=${AIT_PYTHON:-$AIT_ROOT/.venv/bin/python}
 AIT_EXPLAIN_KEY=${AIT_EXPLAIN_KEY:-'\C-e'}
 AIT_TIMEOUT=${AIT_TIMEOUT:-60}
 AIT_CONFIRM=${AIT_CONFIRM:-risky}
+export SHELLDON_PLUGIN=bash                    # lets `ait doctor` see the plugin loaded
 
 # _ait_call <type> [start]  — payload on stdin; prints the reply; fails on "ERR:".
 _ait_call() {
@@ -210,45 +211,11 @@ if ! alias why >/dev/null 2>&1 && ! type -P why >/dev/null; then
   why() { _ait_why "$@"; }
 fi
 
-_ait_daemon_stop() {
-  # Stop only the daemon behind this socket, never other Shelldon daemons.
-  local pid=
-  [ -r "$AIT_SOCK.pid" ] && pid=$(cat "$AIT_SOCK.pid")
-  if [ -n "$pid" ] && ps -o command= -p "$pid" 2>/dev/null | grep -q -- '-m aitd'; then
-    kill "$pid" 2>/dev/null
-  fi
-  rm -f "$AIT_SOCK" "$AIT_SOCK.pid"
-}
-
 ait() {
   case $1 in
-    start)   _ait_call ping start >/dev/null && echo "started" ;;
-    stop)    _ait_daemon_stop; echo "stopped" ;;
-    restart) _ait_daemon_stop; _ait_call ping start >/dev/null && echo "restarted" ;;
-    status)  _ait_call ping start </dev/null; echo ;;
-    explain) shift; printf '%s' "$*" | _ait_call "explain:$(_ait_cols)" start; echo ;;
     why)     _ait_why ;;
-    models)  _ait_call models start </dev/null; echo ;;
     suggest) echo "Ghost suggestions need zsh: bash's line editor can't draw them." ;;
-    key)
-      # The provider is taken from the key itself (nvapi-... is NVIDIA); the
-      # optional argument only matters for keys without a known prefix.
-      local provider=$2 key service
-      read -rs -p "API key (Anthropic sk-ant-... or NVIDIA nvapi-...): " key; echo
-      [ -n "$key" ] || { echo "No key entered." >&2; return 1; }
-      case $key in
-        nvapi-*)  provider=nvidia ;;
-        sk-ant-*) provider=anthropic ;;
-      esac
-      case ${provider:-anthropic} in
-        anthropic) provider=anthropic service=ai-terminal ;;
-        nvidia)    service=ai-terminal-nvidia ;;
-        *)         echo "usage: ait key [anthropic|nvidia]" >&2; return 1 ;;
-      esac
-      security add-generic-password -U -s "$service" -a "$USER" -w "$key" \
-        && echo "Saved $provider key to Keychain (service: $service)." && _ait_daemon_stop ;;
-    log)     tail -n 50 ~/Library/Logs/ai-terminal.log ;;
-    *)       echo "usage: ait start|stop|restart|status|key|models|explain <command>|why|log" ;;
+    *)       "$AIT_ROOT/bin/ait" "$@" ;;     # everything else lives in the real executable
   esac
 }
 
