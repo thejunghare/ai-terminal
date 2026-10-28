@@ -7,6 +7,8 @@ Wire protocol (kept trivial so zsh can speak it with zsocket, no JSON):
             Errors are prefixed with "ERR: ".
 """
 import asyncio
+import fcntl
+import glob
 import logging
 import os
 import signal
@@ -16,6 +18,10 @@ from . import __version__, explain, generate, llm, suggest, why
 
 SOCK_PATH = os.environ.get("AIT_SOCK", os.path.expanduser("~/.ai-terminal.sock"))
 PID_PATH = SOCK_PATH + ".pid"
+LOCK_PATH = SOCK_PATH + ".lock"
+# Newest modification time of the daemon's own code. The plugin compares it with the
+# files on disk and restarts a daemon that is running older code.
+CODE_MTIME = int(max(os.path.getmtime(p) for p in glob.glob(os.path.join(os.path.dirname(__file__), "*.py"))))
 LOG_PATH = os.path.expanduser("~/Library/Logs/ai-terminal.log")
 MAX_REQUEST = 256 * 1024
 
@@ -40,7 +46,7 @@ async def _read_request(reader: asyncio.StreamReader) -> list[str]:
 async def _dispatch(kind: str, cwd: str, payload: str) -> str:
     kind, _, option = kind.partition(":")
     if kind == "ping":
-        return f"pong {__version__} ({llm.active_provider()})"
+        return f"pong {__version__} ({llm.active_provider()}) build={CODE_MTIME}"
     if kind == "models":
         return await llm.probe_nvidia_models()
     if kind == "explain":
@@ -80,6 +86,13 @@ async def _handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) ->
 
 
 async def _serve() -> None:
+    # Only one daemon per socket: if another one holds the lock, leave it running.
+    lock = open(LOCK_PATH, "w")
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        log.info("another aitd already serves %s; exiting", SOCK_PATH)
+        return
     if os.path.exists(SOCK_PATH):
         os.unlink(SOCK_PATH)
     old_umask = os.umask(0o077)          # socket is private from the moment it exists
