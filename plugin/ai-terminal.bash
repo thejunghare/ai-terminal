@@ -219,5 +219,7 @@ ait() {
   esac
 }
 
-# Start the daemon in the background so the first request doesn't have to wait.
-[ -S "$AIT_SOCK" ] || ( _ait_call ping start </dev/null >/dev/null 2>&1 & )
+# Start the daemon, or restart it if it runs older code than what's on disk (after
+# `ait update`, a git pull or an edit), so `ait restart` is never needed. Background,
+# so opening a shell never waits for it.
+[ -x "$AIT_PYTHON" ] && ( AIT_SOCK=$AIT_SOCK PYTHONPATH="$AIT_ROOT/daemon" "$AIT_PYTHON" -m aitd.client --refresh </dev/null >/dev/null 2>&1 & )

@@ -27,6 +27,11 @@ fi
 # Hook the plugin into zsh and bash, so either shell works.
 add_line() {   # add_line <file> <line>
   if ! grep -qF "$2" "$1" 2>/dev/null; then
+    if [[ -e $1 && ! -w $1 ]]; then        # e.g. a profile an installer created with sudo
+      echo "⚠︎ Can't add Shelldon to ${1/#"$HOME"/\~}: it's owned by $(stat -f %Su "$1")."
+      echo "  Fix: sudo chown $USER \"$1\"   then run this installer again."
+      return 0
+    fi
     echo "→ Adding Shelldon to ${1/#"$HOME"/\~}"
     printf '\n# Shelldon\n%s\n' "$2" >> "$1"
   fi

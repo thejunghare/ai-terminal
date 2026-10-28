@@ -462,8 +462,10 @@ precmd_functions=(_ait_precmd ${precmd_functions:#_ait_precmd})   # first, to se
 # `why` unless something else already has the name; `ait why` always works.
 (( $+commands[why] || $+aliases[why] )) || why() { _ait_why "$@" }
 
-# Start the daemon in the background so the first suggestion doesn't have to wait.
-[[ -S $AIT_SOCK ]] || _ait_daemon_spawn
+# Start the daemon, or restart it if it runs older code than what's on disk (after
+# `ait update`, a git pull or an edit), so `ait restart` is never needed. Background,
+# so opening a shell never waits for it.
+[[ -x $AIT_PYTHON ]] && ( AIT_SOCK=$AIT_SOCK PYTHONPATH=$AIT_ROOT/daemon $AIT_PYTHON -m aitd.client --refresh >/dev/null 2>&1 ) &!
 
 # --- ait command -------------------------------------------------------------
 
