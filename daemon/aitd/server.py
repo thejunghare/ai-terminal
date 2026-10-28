@@ -48,7 +48,9 @@ async def _dispatch(kind: str, cwd: str, payload: str) -> str:
     if kind == "ping":
         return f"pong {__version__} ({llm.active_provider()}) build={CODE_MTIME}"
     if kind == "models":
-        return await llm.probe_nvidia_models()
+        return await llm.probe_models()
+    if kind == "use":
+        return llm.use(payload)
     if kind == "explain":
         return await explain.explain(payload, cwd, int(option) if option.isdigit() else 80)
     if kind == "generate":

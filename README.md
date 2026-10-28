@@ -59,7 +59,7 @@ So Shelldon is a small, free, open-source plugin for zsh and bash. Bring your ow
 | **Safety first** | A local risk check flags deletes, overwrites, `sudo`, `git reset --hard`, recursive permission changes, stopping processes and `curl \| sh`, whatever the SI says. |
 | **Private by design** | API key in the macOS Keychain, secrets redacted before anything leaves your Mac, shell history never sent. |
 | **Fast** | A small background daemon keeps connections warm, answers are cached on disk, and stale requests are cancelled as you type. |
-| **Free to run** | Works with a free [NVIDIA](https://build.nvidia.com) key, or with [Anthropic](https://console.anthropic.com) (Claude) for the fastest answers. |
+| **Your choice of AI** | Local models with [Ollama](https://ollama.com) (free, offline, nothing leaves your Mac), hundreds of models through one [OpenRouter](https://openrouter.ai) key (many free), a free [NVIDIA](https://build.nvidia.com) key, or [Anthropic](https://console.anthropic.com) (Claude) for the best answers. Switch any time with `ait use`. |
 
 ## Quick start
 
@@ -70,14 +70,23 @@ git clone https://github.com/thejunghare/shelldon.git ~/shelldon
 ~/shelldon/install.sh
 ```
 
-**This is a one-time setup.** The installer hooks Shelldon into both zsh (`~/.zshrc`) and bash (`~/.bashrc` and your login profile) and puts the `ait` command in `~/.local/bin`, so every new terminal tab is ready by itself. Open a new tab, then save an API key:
+**This is a one-time setup.** The installer hooks Shelldon into both zsh (`~/.zshrc`) and bash (`~/.bashrc` and your login profile) and puts the `ait` command in `~/.local/bin`, so every new terminal tab is ready by itself. Open a new tab, then connect an AI, either an API key:
 
 ```bash
-ait key        # paste the key; it goes into the macOS Keychain
+ait key        # paste an Anthropic, OpenRouter or NVIDIA key; it goes into the macOS Keychain
+ait models     # pick the fastest model that answers for you
 ait status     # check it worked
 ```
 
-See [API keys and models](#api-keys-and-models) for where to get a key.
+or local models with Ollama: free, offline, and nothing leaves your Mac:
+
+```bash
+brew install ollama && brew services start ollama
+ollama pull llama3.2:3b
+ait use ollama
+```
+
+See [AI providers and models](#ai-providers-and-models) for details.
 
 **Updating:** `ait update` pulls the latest version and restarts the daemon. No need to run `install.sh` again.
 **Something not working?** `ait doctor` checks your setup and says how to fix each problem.
@@ -148,9 +157,10 @@ Type a command, **don't press Enter**, press `Ctrl+E`. If the cursor is mid-line
 
 | Command | What it does |
 |---|---|
-| `ait key` | Save an API key to the Keychain |
+| `ait key` | Save an API key to the Keychain (Anthropic, OpenRouter or NVIDIA) |
+| `ait use <provider>` | Switch between `anthropic`, `openrouter`, `nvidia`, `ollama`, or `auto` |
 | `ait status` | Show the daemon, provider and model |
-| `ait models` | Find the fastest NVIDIA model that answers for your key, and use it from now on |
+| `ait models` | Find the fastest model that answers on the current provider, and use it from now on |
 | `ait suggest on` / `history` / `off` | SI + history suggestions, history only, or none (zsh) |
 | `ait explain <cmd>` | Explain without the key binding |
 | `ait why` | Same as `why`, if another `why` command already exists |
@@ -159,30 +169,33 @@ Type a command, **don't press Enter**, press `Ctrl+E`. If the cursor is mid-line
 | `ait doctor` | Check the setup: Python, shell, startup files, PATH, API key, daemon |
 | `ait update` | Update to the latest version and restart |
 
-## API keys and models
+## AI providers and models
 
-You bring your own key, so you pay your provider directly (or nothing, on NVIDIA's free tier). There are two supported providers:
+Shelldon works with four providers. Pick one, or set up several and switch with `ait use`.
 
-| Provider | Get a key | Key looks like | Cost |
+| Provider | What you need | Cost | Good for |
 |---|---|---|---|
-| **NVIDIA** | [build.nvidia.com](https://build.nvidia.com) → any model → *Get API Key* | `nvapi-…` | Free tier |
-| **Anthropic** | [console.anthropic.com](https://console.anthropic.com) → *API Keys* | `sk-ant-…` | Pay per use, fastest answers |
+| **Ollama** (local) | [Ollama](https://ollama.com) installed and one model pulled | Free | Privacy, offline use, classrooms: nothing leaves your Mac, never "busy" |
+| **OpenRouter** | A key from [openrouter.ai/keys](https://openrouter.ai/keys) (`sk-or-…`) | Many free models; others pay per use | One key for hundreds of models |
+| **NVIDIA** | A key from [build.nvidia.com](https://build.nvidia.com) → any model → *Get API Key* (`nvapi-…`) | Free tier | Free cloud models (busy at peak times) |
+| **Anthropic** | A key from [console.anthropic.com](https://console.anthropic.com) → *API Keys* (`sk-ant-…`) | Pay per use | The most reliable, highest-quality answers |
 
-**Saving a key.** Run `ait key` and paste it. The provider is detected from the prefix, and the key is stored in the macOS Keychain (service `ai-terminal` for Anthropic, `ai-terminal-nvidia` for NVIDIA), never in a file. You can also set `ANTHROPIC_API_KEY` or `NVIDIA_API_KEY` in your environment; those take priority over the Keychain.
+**Saving a key.** Run `ait key` and paste it. The provider is detected from the prefix, and the key is stored in the macOS Keychain (services `ai-terminal`, `ai-terminal-openrouter`, `ai-terminal-nvidia`), never in a file. You can also set `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY` or `NVIDIA_API_KEY` in your environment; those take priority over the Keychain. Ollama needs no key.
 
-**Which provider is used.** With `AIT_PROVIDER=anthropic` or `nvidia` set, that one. Otherwise Anthropic if you saved an Anthropic key, else NVIDIA.
+**Which provider is used.** `ait use <provider>` remembers your choice (`AIT_PROVIDER` overrides it). With `ait use auto` (the default), it's the first available of: Anthropic key, OpenRouter key, NVIDIA key, a running Ollama.
 
-**Models used by default:**
+**Picking a model.** Run `ait models` on any provider. Shelldon asks the provider which models you can use, tries the likeliest (small, fast and, on OpenRouter, free ones first), keeps the fastest that answers and remembers the others as backups. If a model is busy, rate limited or missing, the next one takes over automatically.
 
-| Task | Anthropic | NVIDIA |
-|---|---|---|
-| Explain, `why`, plain English → command | `claude-sonnet-5-5` | `openai/gpt-oss-20b` |
-| Suggestions as you type | `claude-haiku-5-5` (fast and cheap) | `openai/gpt-oss-20b` |
-| Override with | `AIT_EXPLAIN_MODEL`, `AIT_SUGGEST_MODEL` | `AIT_NVIDIA_EXPLAIN_MODEL`, `AIT_NVIDIA_SUGGEST_MODEL` |
+| | Anthropic | OpenRouter | NVIDIA | Ollama |
+|---|---|---|---|---|
+| Default model | `claude-sonnet-5-5` (explain, `why`, `#`), `claude-haiku-5-5` (suggestions) | Fastest free model from `ait models` | `openai/gpt-oss-20b`, else fastest from `ait models` | Smallest installed model, or fastest from `ait models` |
+| Choose your own | `AIT_EXPLAIN_MODEL`, `AIT_SUGGEST_MODEL` | `AIT_OPENROUTER_MODEL`, `AIT_OPENROUTER_SUGGEST_MODEL` | `AIT_NVIDIA_EXPLAIN_MODEL`, `AIT_NVIDIA_SUGGEST_MODEL` | `AIT_OLLAMA_MODEL`, `AIT_OLLAMA_SUGGEST_MODEL` |
 
-**NVIDIA fallbacks.** Not every model on build.nvidia.com answers for every account, and the free tier is sometimes busy. So Shelldon asks NVIDIA which models *your* key can use (`/v1/models`), and if the chosen one fails it moves on to small, fast chat models from that list. Run `ait models` to test the likeliest ones: it keeps the fastest that answers and remembers it, with no setting to edit. If none answer, NVIDIA's free tier is busy; try again in a few minutes or use an Anthropic key.
+**Ollama tips.** Good starting models: `llama3.2:3b` (fast, runs on any Apple Silicon Mac) and `qwen2.5-coder:7b` (better with commands, needs about 8 GB of RAM). The first request after Ollama starts loads the model into memory and can take a few seconds. Running Ollama on another machine? Set `AIT_OLLAMA_URL=http://that-machine:11434`.
 
-After changing a key or model, run `ait restart`.
+**OpenRouter tips.** Free models (ids ending in `:free`) have daily limits; Shelldon moves to another free model when one is used up. To use a paid model, add credits on OpenRouter and set `AIT_OPENROUTER_MODEL`.
+
+After changing a key or model variable, run `ait restart`.
 
 ## Configuration
 
@@ -197,17 +210,18 @@ Add any of these above the `source` line in `~/.zshrc` or `~/.bashrc`:
 | `AIT_SUGGEST_DELAY` | `0.8` | Seconds of pause before asking the SI (zsh) |
 | `AIT_SUGGEST_STYLE` | `fg=8` | How ghost text is drawn, e.g. `fg=240` for fainter (zsh) |
 | `AIT_EXPLAIN_KEY` | `^E` (zsh), `\C-e` (bash) | Key binding for explain |
-| `AIT_PROVIDER` | auto | `anthropic` or `nvidia` when you've saved both |
+| `AIT_PROVIDER` | unset | Force `anthropic`, `openrouter`, `nvidia` or `ollama` (overrides `ait use`) |
 | `AIT_TIMEOUT` | `60` | Seconds to wait for an answer |
 | `NO_COLOR` | unset | `1` for output without colour |
 
-Model variables are in [API keys and models](#api-keys-and-models).
+Model variables are in [AI providers and models](#ai-providers-and-models).
 
 ## Privacy & safety
 
 - **What's sent:** only the line you're working on, plus a short context (macOS version, current folder, git branch). When you type `why`, also the failed command, its exit status and the last 60 lines of its output.
 - **Redacted first:** API keys, tokens, private keys, `PASSWORD=…`/`SECRET=…`-style variables and `user:pass@` URLs become `[REDACTED]`; lines containing them never get suggestions.
 - **Never sent:** your shell history (used locally for suggestions only) and your files.
+- **Fully local option:** with Ollama, nothing leaves your Mac at all.
 - **Never auto-run when risky:** the local risk check can't be skipped by the SI.
 - **Keys:** stored in the macOS Keychain. Cached answers live in `~/.cache/ai-terminal/`.
 
@@ -232,7 +246,7 @@ flowchart LR
         guard["context.py<br/>redaction + context"]
         risk["generate.py<br/>local risk check"]
         cache[("disk cache<br/>~/.cache/ai-terminal")]
-        llm["llm.py<br/>provider + model choice<br/>NVIDIA fallbacks"]
+        llm["llm.py<br/>provider + model choice<br/>live catalog · busy-model fallback"]
         server --> tasks
         tasks --> guard --> llm
         tasks <--> cache
@@ -240,14 +254,19 @@ flowchart LR
     end
 
     keychain[("macOS Keychain<br/>API keys")]
-    nvidia["NVIDIA API<br/>build.nvidia.com"]
-    anthropic["Anthropic API<br/>Claude"]
+    subgraph cloud["Cloud APIs (your key)"]
+        direction TB
+        anthropic["Anthropic<br/>Claude"]
+        openrouter["OpenRouter<br/>hundreds of models"]
+        nvidia["NVIDIA<br/>build.nvidia.com"]
+    end
+    ollama["Ollama<br/>local models on your Mac"]
 
     zsh -- "Unix socket<br/>~/.ai-terminal.sock (600)" --> server
     client -- "Unix socket" --> server
     llm --> keychain
-    llm -- HTTPS --> nvidia
-    llm -- HTTPS --> anthropic
+    llm -- HTTPS --> cloud
+    llm -- "localhost, nothing leaves your Mac" --> ollama
 ```
 
 **What happens when you type `# make a folder` and press Return:**
@@ -257,7 +276,7 @@ sequenceDiagram
     participant U as You
     participant P as Shell plugin
     participant D as aitd daemon
-    participant M as NVIDIA / Anthropic
+    participant M as Model (cloud or Ollama)
     U->>P: # make a folder ⏎
     P->>D: generate · cwd · request (Unix socket)
     D->>D: redact secrets, add context (OS, folder, git branch)
@@ -282,7 +301,8 @@ The plugin never blocks your typing: requests go to a small local daemon over a 
 - [x] `why`: explain the last failed command
 - [x] bash support
 - [ ] Homebrew install (`brew install shelldon`)
-- [ ] Local models via Ollama, fully offline
+- [x] Local models via Ollama, fully offline
+- [x] OpenRouter: hundreds of models with one key
 
 Ideas and votes welcome in [Issues](https://github.com/thejunghare/shelldon/issues).
 

@@ -1,10 +1,13 @@
 import asyncio
+import logging
 import os
 import sys
 import tempfile
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "daemon"))
+
+logging.getLogger("aitd").addHandler(logging.NullHandler())  # keep test output clean
 
 from aitd import client, context, generate, llm, render, store, suggest, why  # noqa: E402
 
@@ -209,53 +212,77 @@ class ClientTest(unittest.TestCase):
         self.assertEqual(subprocess.run([sys.executable, "-c", code], env=env).returncode, 0)
 
 
-class NvidiaModelsTest(unittest.TestCase):
-    """`ait models` when the built-in model names are stale or busy (seen on a real key)."""
+class ProviderTestBase(unittest.TestCase):
+    """Runs a provider against a fake HTTP server instead of the real API."""
+    NAME = "nvidia"
+    ENV = {"NVIDIA_API_KEY": "nvapi-test"}
+
+    def setUp(self):
+        import httpx
+        self.tmp = tempfile.TemporaryDirectory()
+        store.CACHE_DIR = self.tmp.name
+        llm._settings = store.DiskCache("settings")
+        self.p = llm.PROVIDERS[self.NAME]
+        self.p.saved = store.DiskCache(self.NAME)
+        self.p.models.clear()
+        self.p.resolved.clear()
+        self.p.cooldown.clear()
+        self.saved_env = {k: os.environ.pop(k, None) for k in (
+            "ANTHROPIC_API_KEY", "NVIDIA_API_KEY", "OPENROUTER_API_KEY", "AIT_PROVIDER",
+            "AIT_NVIDIA_EXPLAIN_MODEL", "AIT_OPENROUTER_MODEL", "AIT_OLLAMA_MODEL")}
+        os.environ.update(self.ENV)
+        self.asked = []
+        llm._clients[self.NAME] = httpx.AsyncClient(base_url="https://fake.test/v1",
+                                                    transport=httpx.MockTransport(self._handle))
+
+    def _handle(self, request):
+        import httpx, json
+        if request.url.path.endswith("/models"):
+            return httpx.Response(200, json={"data": [{"id": m} for m in self.CATALOG]})
+        model = json.loads(request.content)["model"]
+        self.asked.append(model)
+        return self.answer(model, request)
+
+    def ok(self, text="ok"):
+        import httpx
+        return httpx.Response(200, json={"choices": [{"message": {"content": text}}]})
+
+    def tearDown(self):
+        llm._clients.pop(self.NAME, None)
+        for k, v in self.saved_env.items():
+            os.environ.pop(k, None)
+            if v is not None:
+                os.environ[k] = v
+        for k in self.ENV:
+            os.environ.pop(k, None)
+        self.tmp.cleanup()
+
+
+class NvidiaModelsTest(ProviderTestBase):
+    """Stale model names, a busy free tier and 503 ResourceExhausted, as seen on a real key."""
 
     CATALOG = ["openai/gpt-oss-20b", "nvidia/nemotron-3-super-120b-a12b", "nv-embedqa-e5-v5",
                "meta/llama-3.2-11b-vision-instruct", "meta/llama-3.1-8b-instruct",
                "qwen/qwen3-235b-a22b"]
 
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        store.CACHE_DIR = self.tmp.name
-        llm._nvidia_saved = store.DiskCache("nvidia")
-        llm._nvidia_models.clear()
-        llm._resolved_nvidia.clear()
-        os.environ.pop("AIT_NVIDIA_EXPLAIN_MODEL", None)
-        os.environ.pop("ANTHROPIC_API_KEY", None)
-        os.environ["NVIDIA_API_KEY"] = "nvapi-test"
-        self.asked = []
+        super().setUp()
         self.busy = set()
-        llm._nvidia_cooldown.clear()
 
-        def handler(request):
-            import httpx, json
-            if request.url.path.endswith("/models"):
-                return httpx.Response(200, json={"data": [{"id": m} for m in self.CATALOG]})
-            model = json.loads(request.content)["model"]
-            self.asked.append(model)
-            if model == "openai/gpt-oss-20b":
-                raise httpx.ReadTimeout("busy", request=request)
-            if model == "meta/llama-3.1-8b-instruct":
-                return httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}]})
-            if model in self.busy:      # what a real key got: the model's worker is full
-                return httpx.Response(503, json={"detail": {
-                    "message": "ResourceExhausted: Worker local total request limit reached (16/16)",
-                    "type": "Service Unavailable", "code": 503}})
-            return httpx.Response(404, json={"detail": "Function not found for account"})
-
+    def answer(self, model, request):
         import httpx
-        llm._clients["nvidia"] = httpx.AsyncClient(base_url="https://nv.test/v1",
-                                                   transport=httpx.MockTransport(handler))
-
-    def tearDown(self):
-        llm._clients.pop("nvidia", None)
-        os.environ.pop("NVIDIA_API_KEY", None)
-        self.tmp.cleanup()
+        if model == "openai/gpt-oss-20b":
+            raise httpx.ReadTimeout("busy", request=request)
+        if model == "meta/llama-3.1-8b-instruct" and model not in self.busy:
+            return self.ok()
+        if model in self.busy:
+            return httpx.Response(503, json={"detail": {
+                "message": "ResourceExhausted: Worker local total request limit reached (16/16)",
+                "type": "Service Unavailable", "code": 503}})
+        return httpx.Response(404, json={"detail": "Function not found for account"})
 
     def test_probe_uses_live_catalog_and_remembers_the_winner(self):
-        out = asyncio.run(llm.probe_nvidia_models())
+        out = asyncio.run(llm.probe_models())
         self.assertRegex(out, r"meta/llama-3.1-8b-instruct +✓ works")
         self.assertIn("not available for your account", out)
         self.assertIn("Using meta/llama-3.1-8b-instruct from now on", out)
@@ -267,42 +294,121 @@ class NvidiaModelsTest(unittest.TestCase):
         text, model = asyncio.run(llm.complete("explain", "sys", "user"))
         self.assertEqual((text, model), ("ok", "meta/llama-3.1-8b-instruct"))
         self.assertEqual(self.asked[0], "openai/gpt-oss-20b")       # default tried first
-        llm._resolved_nvidia.clear()
-        self.assertEqual(llm._nvidia_preferred("why"), "meta/llama-3.1-8b-instruct")  # survives restart
+        self.p.resolved.clear()
+        self.assertEqual(self.p.preferred("why"), "meta/llama-3.1-8b-instruct")  # survives restart
 
     def test_busy_model_is_skipped_not_fatal(self):
-        llm._nvidia_saved.put("model", "qwen/qwen3-235b-a22b")
+        self.p.saved.put("model", "qwen/qwen3-235b-a22b")
         self.busy.add("qwen/qwen3-235b-a22b")
         text, model = asyncio.run(llm.complete("generate", "sys", "user"))
         self.assertEqual(model, "meta/llama-3.1-8b-instruct")
         self.assertEqual(self.asked[0], "qwen/qwen3-235b-a22b")       # tried, was busy, moved on
         self.asked.clear()
-        llm._resolved_nvidia.clear()
-        llm._nvidia_saved.put("model", "qwen/qwen3-235b-a22b")
+        self.p.resolved.clear()
+        self.p.saved.put("model", "qwen/qwen3-235b-a22b")
         asyncio.run(llm.complete("generate", "sys", "user"))
         self.assertNotIn("qwen/qwen3-235b-a22b", self.asked)          # cooling down: not retried
 
     def test_all_busy_gives_a_plain_message(self):
-        self.busy.update(self.CATALOG + ["meta/llama-3.1-8b-instruct"])
-        self.CATALOG = [m for m in self.CATALOG if m != "meta/llama-3.1-8b-instruct"]
-        llm._nvidia_models.clear()
+        self.busy.update(self.CATALOG)
         with self.assertRaises(llm.LLMError) as ctx:
             asyncio.run(llm.complete("generate", "sys", "user"))
         self.assertIn("busy right now", str(ctx.exception))
         self.assertNotIn("{", str(ctx.exception))                       # no raw JSON
 
     def test_env_setting_wins_over_remembered_model(self):
-        llm._nvidia_saved.put("model", "meta/llama-3.1-8b-instruct")
+        self.p.saved.put("model", "meta/llama-3.1-8b-instruct")
         os.environ["AIT_NVIDIA_EXPLAIN_MODEL"] = "my/choice"
-        try:
-            self.assertEqual(llm._nvidia_preferred("explain"), "my/choice")
-        finally:
-            os.environ.pop("AIT_NVIDIA_EXPLAIN_MODEL")
+        self.assertEqual(self.p.preferred("explain"), "my/choice")
 
     def test_ranking_puts_small_models_first(self):
-        ranked = llm._rank_chat_models(self.CATALOG)
+        ranked = self.p.rank(self.CATALOG)
         self.assertLess(ranked.index("meta/llama-3.1-8b-instruct"), ranked.index("qwen/qwen3-235b-a22b"))
         self.assertNotIn("nv-embedqa-e5-v5", ranked)
+
+
+class OpenRouterTest(ProviderTestBase):
+    NAME = "openrouter"
+    ENV = {"OPENROUTER_API_KEY": "sk-or-v1-test"}
+    CATALOG = ["anthropic/claude-sonnet-5-5", "openai/gpt-oss-20b:free",
+               "meta-llama/llama-3.3-70b-instruct:free", "mistralai/mistral-small-3.2:free",
+               "openai/text-embedding-3-small"]
+
+    def answer(self, model, request):
+        import httpx
+        if model == "mistralai/mistral-small-3.2:free":
+            return self.ok("fine")
+        if model == "openai/gpt-oss-20b:free":     # OpenRouter puts some failures inside a 200
+            return httpx.Response(200, json={"error": {"code": 429, "message": "Rate limit exceeded"}})
+        if model.endswith(":free"):
+            return httpx.Response(429, json={"error": {"message": "free-models-per-day"}})
+        return httpx.Response(402, json={"error": {"message": "Insufficient credits"}})
+
+    def test_free_models_first_and_paid_skipped(self):
+        ranked = self.p.rank(self.CATALOG)
+        self.assertTrue(all(m.endswith(":free") for m in ranked[:3]))
+        self.assertNotIn("openai/text-embedding-3-small", ranked)
+
+    def test_cascades_past_rate_limits_to_a_working_free_model(self):
+        text, model = asyncio.run(llm.complete("explain", "sys", "user"))
+        self.assertEqual((text, model), ("fine", "mistralai/mistral-small-3.2:free"))
+        self.assertNotIn("anthropic/claude-sonnet-5-5", self.asked)   # paid, never needed
+
+    def test_chosen_paid_model_without_credits_moves_on(self):
+        os.environ["AIT_OPENROUTER_MODEL"] = "anthropic/claude-sonnet-5-5"
+        _, model = asyncio.run(llm.complete("why", "sys", "user"))
+        self.assertEqual(model, "mistralai/mistral-small-3.2:free")
+        self.assertEqual(self.asked[0], "anthropic/claude-sonnet-5-5")
+
+    def test_key_prefix_picks_openrouter(self):
+        self.assertEqual(llm._owner("sk-or-v1-abc", "anthropic"), "openrouter")
+        self.assertEqual(llm._owner("sk-ant-abc", "openrouter"), "anthropic")
+        self.assertEqual(llm._owner("nvapi-abc", "anthropic"), "nvidia")
+        self.assertEqual(llm._provider()[0], "openrouter")
+
+
+class OllamaTest(ProviderTestBase):
+    NAME = "ollama"
+    ENV = {}
+    CATALOG = ["nomic-embed-text:latest", "qwen2.5-coder:7b", "llama3.2:3b"]
+
+    def setUp(self):
+        super().setUp()
+        self.p.running = lambda: True                 # pretend Ollama is up
+        llm._settings.put("provider", "ollama")
+
+    def tearDown(self):
+        del self.p.running
+        super().tearDown()
+
+    def answer(self, model, request):
+        self.assertNotIn("authorization", request.headers)   # no key for local models
+        return self.ok("local " + model)
+
+    def test_uses_installed_model_smallest_first(self):
+        text, model = asyncio.run(llm.complete("generate", "sys", "user"))
+        self.assertEqual(model, "llama3.2:3b")
+        self.assertEqual(text, "local llama3.2:3b")
+
+    def test_no_models_installed(self):
+        self.CATALOG = ["nomic-embed-text:latest"]
+        with self.assertRaises(llm.LLMError) as ctx:
+            asyncio.run(llm.complete("generate", "sys", "user"))
+        self.assertIn("ollama pull", str(ctx.exception))
+
+    def test_not_running(self):
+        self.p.running = lambda: False
+        with self.assertRaises(llm.MissingKey) as ctx:
+            llm._provider()
+        self.assertIn("Ollama isn't running", str(ctx.exception))
+
+    def test_use_switches_provider(self):
+        self.assertIn("Switched to ollama", llm.use("ollama"))
+        self.assertTrue(llm.use("bogus").startswith("ERR:"))
+        os.environ["OPENROUTER_API_KEY"] = "sk-or-v1-x"
+        llm.use("auto")
+        self.assertEqual(llm._provider()[0], "openrouter")         # auto: keys before Ollama
+        os.environ.pop("OPENROUTER_API_KEY")
 
 
 class DiskCacheTest(unittest.TestCase):

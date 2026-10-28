@@ -9,7 +9,7 @@
 #            Ctrl+G does the same for any line without the #.
 #   why      after a command fails: explains why, and puts the likely fix on the prompt.
 #            Also takes output from a pipe:  make 2>&1 | why
-#   ait      helper command: ait start|stop|restart|status|key|models|suggest on|off|explain <cmd>|why|log|doctor|update
+#   ait      helper command: ait start|stop|restart|status|key|use|models|suggest on|off|explain <cmd>|why|log|doctor|update
 #
 # Settings (set before sourcing):
 #   AIT_EXPLAIN_KEY     key binding for explain              (default: ^E)
@@ -21,7 +21,7 @@
 #   AIT_CONFIRM         risky = run safe SI commands at once, ask y/n for risky ones;
 #                       all = always ask                      (default: risky)
 #   AIT_SOCK            daemon socket path                   (default: ~/.ai-terminal.sock)
-#   AIT_PROVIDER        anthropic | nvidia                   (default: whichever has a key)
+#   AIT_PROVIDER        anthropic | openrouter | nvidia | ollama  (default: `ait use`, else first available)
 
 # Must stay POSIX so bash can parse it: bail out before any zsh-only syntax.
 if [ -z "$ZSH_VERSION" ]; then
@@ -485,26 +485,9 @@ ait() {
         off) AIT_SUGGEST=0; print "suggestions off" ;;
         *)   print "usage: ait suggest on|history|off" ;;
       esac ;;
-    key)
-      # The provider is taken from the key itself (nvapi-... is NVIDIA); the
-      # optional argument only matters for keys without a known prefix.
-      local provider=$2 key
-      read -rs "key?API key (Anthropic sk-ant-... or NVIDIA nvapi-...): "; print
-      [[ -n $key ]] || { print -u2 "No key entered."; return 1 }
-      case $key in
-        nvapi-*)  provider=nvidia ;;
-        sk-ant-*) provider=anthropic ;;
-      esac
-      case ${provider:-anthropic} in
-        anthropic) provider=anthropic; local service=ai-terminal ;;
-        nvidia)    local service=ai-terminal-nvidia ;;
-        *)         print -u2 "usage: ait key [anthropic|nvidia]"; return 1 ;;
-      esac
-      security add-generic-password -U -s $service -a "$USER" -w "$key" \
-        && print "Saved $provider key to Keychain (service: $service)." && _ait_daemon_stop ;;
     models)  _ait_request models "" ;;
     log)     tail -n 50 ~/Library/Logs/ai-terminal.log ;;
-    doctor|update) $AIT_ROOT/bin/ait "$@" ;;
-    *)       print "usage: ait start|stop|restart|status|key|models|suggest on|history|off|explain <command>|why|log|doctor|update" ;;
+    key|use|doctor|update) $AIT_ROOT/bin/ait "$@" ;;   # shared with bash: lives in bin/ait
+    *)       print "usage: ait start|stop|restart|status|key|use <provider>|models|suggest on|history|off|explain <command>|why|log|doctor|update" ;;
   esac
 }

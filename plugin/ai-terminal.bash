@@ -6,7 +6,7 @@
 #            Also takes output from a pipe:  make 2>&1 | why
 #   Ctrl+E   (bash 4+) explain the typed command; the first press still jumps to end of line
 #   Ctrl+G   (bash 4+) turn the typed line into a command, without running it
-#   ait      helper command: ait start|stop|restart|status|key|models|explain <cmd>|why|log|doctor|update
+#   ait      helper command: ait start|stop|restart|status|key|use|models|explain <cmd>|why|log|doctor|update
 #
 # Works with the bash 3.2 that ships with macOS; the key bindings need bash 4+
 # (brew install bash). Ghost suggestions need zsh: readline can't draw them.
