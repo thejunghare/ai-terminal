@@ -209,6 +209,75 @@ class ClientTest(unittest.TestCase):
         self.assertEqual(subprocess.run([sys.executable, "-c", code], env=env).returncode, 0)
 
 
+class NvidiaModelsTest(unittest.TestCase):
+    """`ait models` when the built-in model names are stale or busy (seen on a real key)."""
+
+    CATALOG = ["openai/gpt-oss-20b", "nvidia/nemotron-3-super-120b-a12b", "nv-embedqa-e5-v5",
+               "meta/llama-3.2-11b-vision-instruct", "meta/llama-3.1-8b-instruct",
+               "qwen/qwen3-235b-a22b"]
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        store.CACHE_DIR = self.tmp.name
+        llm._nvidia_saved = store.DiskCache("nvidia")
+        llm._nvidia_models.clear()
+        llm._resolved_nvidia.clear()
+        os.environ.pop("AIT_NVIDIA_EXPLAIN_MODEL", None)
+        os.environ.pop("ANTHROPIC_API_KEY", None)
+        os.environ["NVIDIA_API_KEY"] = "nvapi-test"
+        self.asked = []
+
+        def handler(request):
+            import httpx, json
+            if request.url.path.endswith("/models"):
+                return httpx.Response(200, json={"data": [{"id": m} for m in self.CATALOG]})
+            model = json.loads(request.content)["model"]
+            self.asked.append(model)
+            if model == "openai/gpt-oss-20b":
+                raise httpx.ReadTimeout("busy", request=request)
+            if model == "meta/llama-3.1-8b-instruct":
+                return httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}]})
+            return httpx.Response(404, json={"detail": "Function not found for account"})
+
+        import httpx
+        llm._clients["nvidia"] = httpx.AsyncClient(base_url="https://nv.test/v1",
+                                                   transport=httpx.MockTransport(handler))
+
+    def tearDown(self):
+        llm._clients.pop("nvidia", None)
+        os.environ.pop("NVIDIA_API_KEY", None)
+        self.tmp.cleanup()
+
+    def test_probe_uses_live_catalog_and_remembers_the_winner(self):
+        out = asyncio.run(llm.probe_nvidia_models())
+        self.assertRegex(out, r"meta/llama-3.1-8b-instruct +✓ works")
+        self.assertIn("not available for your account", out)
+        self.assertIn("Using meta/llama-3.1-8b-instruct from now on", out)
+        self.assertNotIn("nv-embedqa", " ".join(self.asked))       # not a chat model
+        self.assertNotIn("vision", " ".join(self.asked))
+        self.assertEqual(store.DiskCache("nvidia").get("model"), "meta/llama-3.1-8b-instruct")
+
+    def test_requests_fall_back_through_the_catalog(self):
+        text, model = asyncio.run(llm.complete("explain", "sys", "user"))
+        self.assertEqual((text, model), ("ok", "meta/llama-3.1-8b-instruct"))
+        self.assertEqual(self.asked[0], "openai/gpt-oss-20b")       # default tried first
+        llm._resolved_nvidia.clear()
+        self.assertEqual(llm._nvidia_preferred("why"), "meta/llama-3.1-8b-instruct")  # survives restart
+
+    def test_env_setting_wins_over_remembered_model(self):
+        llm._nvidia_saved.put("model", "meta/llama-3.1-8b-instruct")
+        os.environ["AIT_NVIDIA_EXPLAIN_MODEL"] = "my/choice"
+        try:
+            self.assertEqual(llm._nvidia_preferred("explain"), "my/choice")
+        finally:
+            os.environ.pop("AIT_NVIDIA_EXPLAIN_MODEL")
+
+    def test_ranking_puts_small_models_first(self):
+        ranked = llm._rank_chat_models(self.CATALOG)
+        self.assertLess(ranked.index("meta/llama-3.1-8b-instruct"), ranked.index("qwen/qwen3-235b-a22b"))
+        self.assertNotIn("nv-embedqa-e5-v5", ranked)
+
+
 class DiskCacheTest(unittest.TestCase):
     def test_round_trip_and_eviction(self):
         with tempfile.TemporaryDirectory() as d:

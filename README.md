@@ -150,7 +150,7 @@ Type a command, **don't press Enter**, press `Ctrl+E`. If the cursor is mid-line
 |---|---|
 | `ait key` | Save an API key to the Keychain |
 | `ait status` | Show the daemon, provider and model |
-| `ait models` | Test which NVIDIA models answer for your key, and how fast |
+| `ait models` | Find the fastest NVIDIA model that answers for your key, and use it from now on |
 | `ait suggest on` / `history` / `off` | SI + history suggestions, history only, or none (zsh) |
 | `ait explain <cmd>` | Explain without the key binding |
 | `ait why` | Same as `why`, if another `why` command already exists |
@@ -180,7 +180,7 @@ You bring your own key, so you pay your provider directly (or nothing, on NVIDIA
 | Suggestions as you type | `claude-haiku-5-5` (fast and cheap) | `openai/gpt-oss-20b` |
 | Override with | `AIT_EXPLAIN_MODEL`, `AIT_SUGGEST_MODEL` | `AIT_NVIDIA_EXPLAIN_MODEL`, `AIT_NVIDIA_SUGGEST_MODEL` |
 
-**NVIDIA fallbacks.** Not every model listed on build.nvidia.com answers for every account. If the chosen model is unavailable or too slow, the daemon tries these in order and remembers the first one that works: `openai/gpt-oss-20b`, `deepseek-ai/deepseek-v4.1-flash`, `z-ai/glm-5.3-flash`, `nvidia/nemotron-3-super-120b-a12b`, `nv-mistralai/mistral-nemo-12b-instruct`. Run `ait models` to see which answer for your key, and how fast.
+**NVIDIA fallbacks.** Not every model on build.nvidia.com answers for every account, and the free tier is sometimes busy. So Shelldon asks NVIDIA which models *your* key can use (`/v1/models`), and if the chosen one fails it moves on to small, fast chat models from that list. Run `ait models` to test the likeliest ones: it keeps the fastest that answers and remembers it, with no setting to edit. If none answer, NVIDIA's free tier is busy; try again in a few minutes or use an Anthropic key.
 
 After changing a key or model, run `ait restart`.
 

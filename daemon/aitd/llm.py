@@ -16,6 +16,8 @@ import time
 import anthropic
 import httpx
 
+from . import store
+
 log = logging.getLogger("aitd")
 
 # Model per task, per provider. Each can be overridden with an env var.
@@ -37,7 +39,8 @@ MODELS = {
 NVIDIA_BASE_URL = os.environ.get("AIT_NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1")
 
 # build.nvidia.com lists models that a given account can't call (HTTP 404
-# "Function ... Not found for account"). When that happens we try these in order.
+# "Function ... Not found for account"), and the catalog changes often. So the live
+# catalog (GET /v1/models) decides what we try; these are only preferred if listed.
 NVIDIA_FALLBACK_MODELS = [
     "openai/gpt-oss-20b",
     "deepseek-ai/deepseek-v4.1-flash",
@@ -54,6 +57,16 @@ NVIDIA_TOTAL_BUDGET = 50.0
 
 # Model actually answering per task, once a fallback has been needed.
 _resolved_nvidia: dict[str, str] = {}
+# The model that last answered, kept across daemon restarts so we don't hunt again.
+_nvidia_saved = store.DiskCache("nvidia", max_items=10)
+_nvidia_models: list[str] = []          # the account's catalog, fetched once
+# Catalog entries that aren't chat models: embeddings, rerankers, guards, vision, speech...
+_NOT_CHAT = re.compile(
+    r"embed|rerank|retriev|guard|safety|reward|vision|vlm|-vl\b|vila|neva|clip|ocr|parse|"
+    r"asr|tts|riva|whisper|canary|parakeet|audio|speech|detect|pii|deplot|kosmos|paligemma|"
+    r"fuyu|cosmos|sdxl|flux|diffusion|bge|translate", re.IGNORECASE)
+# Name hints for small, fast models, best first; these answer quickest on the free tier.
+_FAST_HINTS = ["flash", "nano", "mini", "8b", "7b", "9b", "12b", "small", "20b", "instruct"]
 
 _KEY_SOURCES = {
     "anthropic": ("ANTHROPIC_API_KEY", "ai-terminal"),
@@ -125,8 +138,8 @@ def active_provider() -> str:
         provider, _ = _provider()
     except (MissingKey, LLMError) as e:
         return f"no provider: {e}"
-    model = _resolved_nvidia.get("explain") if provider == "nvidia" else None
-    return f"{provider}, explain model {model or MODELS[provider]['explain']}"
+    model = _nvidia_preferred("explain") if provider == "nvidia" else MODELS[provider]["explain"]
+    return f"{provider}, explain model {model}"
 
 
 _clients: dict[str, object] = {}
@@ -155,10 +168,67 @@ class _ModelUnavailable(LLMError):
 _no_reasoning_effort: set[str] = set()
 
 
+def _nvidia_client() -> httpx.AsyncClient:
+    return _clients.get("nvidia") or _clients.setdefault(
+        "nvidia", httpx.AsyncClient(base_url=NVIDIA_BASE_URL))
+
+
+async def _nvidia_catalog(key: str) -> list[str]:
+    """Model ids this key can see, from GET /v1/models; [] if the list can't be fetched."""
+    if _nvidia_models:
+        return _nvidia_models
+    try:
+        resp = await _nvidia_client().get("/models", timeout=10,
+                                          headers={"Authorization": f"Bearer {key}"})
+    except httpx.HTTPError as e:
+        log.warning("NVIDIA model list unavailable: %s", e)
+        return []
+    if resp.status_code in (401, 403):
+        raise LLMError(f"NVIDIA rejected your key (HTTP {resp.status_code}). "
+                       "Create a new one at build.nvidia.com, then run `ait key`.")
+    if resp.status_code != 200:
+        return []
+    try:
+        ids = [m["id"] for m in resp.json().get("data", []) if m.get("id")]
+    except (ValueError, AttributeError, TypeError):
+        return []
+    _nvidia_models[:] = ids
+    return ids
+
+
+def _rank_chat_models(ids: list[str]) -> list[str]:
+    """Chat models from a catalog, small and fast ones first."""
+    def speed(model: str) -> int:
+        name = model.lower()
+        return next((i for i, hint in enumerate(_FAST_HINTS) if hint in name), len(_FAST_HINTS))
+    return sorted((m for m in ids if not _NOT_CHAT.search(m)), key=speed)
+
+
+def _nvidia_preferred(task: str) -> str:
+    """An explicit env setting wins, then what answered last, then the default."""
+    env = "AIT_NVIDIA_SUGGEST_MODEL" if task == "suggest" else "AIT_NVIDIA_EXPLAIN_MODEL"
+    return (os.environ.get(env) or _resolved_nvidia.get(task) or _resolved_nvidia.get("explain")
+            or _nvidia_saved.get("model") or MODELS["nvidia"][task])
+
+
+async def _nvidia_candidates(key: str, preferred: str) -> list[str]:
+    catalog = await _nvidia_catalog(key)
+    if not catalog:                     # couldn't list: fall back to the built-in guesses
+        return list(dict.fromkeys([preferred, *NVIDIA_FALLBACK_MODELS]))
+    listed = set(catalog)
+    known = [m for m in NVIDIA_FALLBACK_MODELS if m in listed]
+    return list(dict.fromkeys([preferred, *known, *_rank_chat_models(catalog)]))
+
+
+def _remember_nvidia(model: str) -> None:
+    _resolved_nvidia["explain"] = _resolved_nvidia["generate"] = _resolved_nvidia["why"] = model
+    if _nvidia_saved.get("model") != model:
+        _nvidia_saved.put("model", model)
+
+
 async def _nvidia_post(key: str, model: str, messages: list, max_tokens: int,
                        timeout: float) -> httpx.Response:
-    client = _clients.get("nvidia") or _clients.setdefault(
-        "nvidia", httpx.AsyncClient(base_url=NVIDIA_BASE_URL))
+    client = _nvidia_client()
     body = {"model": model, "max_tokens": max_tokens, "temperature": 0.2, "messages": messages}
     # gpt-oss thinks before answering; "low" makes it answer several times faster.
     low_effort = "gpt-oss" in model and model not in _no_reasoning_effort
@@ -201,12 +271,12 @@ async def _nvidia_call(key: str, model: str, system: str, user: str, timeout: fl
 
 
 async def _nvidia(key: str, task: str, system: str, user: str) -> tuple[str, str]:
-    preferred = _resolved_nvidia.get(task) or _resolved_nvidia.get("explain") or MODELS["nvidia"][task]
+    preferred = _nvidia_preferred(task)
     if task == "suggest":
         # Suggestions are best-effort and frequent: one model, short wait, no cascade.
         candidates, budget, max_tokens = [preferred], 15.0, 512
     else:
-        candidates = [preferred] + [m for m in NVIDIA_FALLBACK_MODELS if m != preferred]
+        candidates = await _nvidia_candidates(key, preferred)
         budget, max_tokens = NVIDIA_TOTAL_BUDGET, NVIDIA_MAX_TOKENS
     deadline = time.monotonic() + budget
     problems = []
@@ -221,40 +291,66 @@ async def _nvidia(key: str, task: str, system: str, user: str) -> tuple[str, str
             log.warning("%s", e)
             problems.append(str(e))
             continue
-        _resolved_nvidia[task] = model
+        if task == "suggest":
+            _resolved_nvidia["suggest"] = model
+        else:
+            _remember_nvidia(model)
         return text, model
     if task == "suggest":
         raise LLMError("; ".join(problems) or "no suggestion")
     raise LLMError(
-        "No NVIDIA model answered in time. Run `ait models` to see which work for "
-        "your key. Tried: " + "; ".join(problems)
+        "No NVIDIA model answered in time; the free tier may be busy. Run `ait models` "
+        "to find one that works, or use an Anthropic key. Tried: " + "; ".join(problems[:3])
     )
 
 
+PROBE_LIMIT = 8            # models `ait models` tries
+PROBE_PARALLEL = 4         # at once: enough to be quick, few enough not to trip rate limits
+
+
 async def probe_nvidia_models() -> str:
-    """Try every candidate model at once with a tiny prompt and report the result."""
+    """Try likely models from the account's live catalog and keep the fastest that works."""
     keys = _available_keys()
     if "nvidia" not in keys:
         raise MissingKey("No NVIDIA key saved. Run `ait key`.")
-    models = list(dict.fromkeys([MODELS["nvidia"]["explain"], *NVIDIA_FALLBACK_MODELS]))
+    key = keys["nvidia"]
+    catalog = await _nvidia_catalog(key)
+    models = (await _nvidia_candidates(key, _nvidia_preferred("explain")))[:PROBE_LIMIT]
     messages = [{"role": "user", "content": "Reply with the word ok."}]
+    gate = asyncio.Semaphore(PROBE_PARALLEL)
 
-    async def probe(model: str) -> tuple[str, str]:
-        start = time.monotonic()
-        try:
-            resp = await _nvidia_post(keys["nvidia"], model, messages, 32, NVIDIA_ATTEMPT_TIMEOUT)
-        except LLMError as e:
-            return model, f"✗ {e}"
-        took = time.monotonic() - start
-        if resp.status_code == 200:
-            return model, f"✓ works ({took:.1f}s)"
-        return model, f"✗ HTTP {resp.status_code}"
+    async def probe(model: str) -> tuple[str, float | None, str]:
+        async with gate:
+            start = time.monotonic()
+            try:
+                resp = await _nvidia_post(key, model, messages, 64, NVIDIA_ATTEMPT_TIMEOUT)
+            except LLMError as e:
+                return model, None, f"✗ {e}".replace(f"{model} ", "")
+            took = time.monotonic() - start
+            if resp.status_code == 200:
+                return model, took, f"✓ works ({took:.1f}s)"
+            if resp.status_code == 404:
+                return model, None, "✗ not available for your account"
+            if resp.status_code == 429:
+                return model, None, "✗ rate limited, try again in a minute"
+            return model, None, f"✗ HTTP {resp.status_code}"
 
     results = await asyncio.gather(*(probe(m) for m in models))
     width = max(len(m) for m in models)
-    lines = [f"  {m.ljust(width)}  {r}" for m, r in results]
-    return ("NVIDIA models for your key:\n" + "\n".join(lines)
-            + "\n\nTo use one: export AIT_NVIDIA_EXPLAIN_MODEL=<model> in ~/.zshrc, then ait restart")
+    lines = [f"  {m.ljust(width)}  {r}" for m, _, r in results]
+    head = (f"Your key can use {len(_rank_chat_models(catalog))} chat models. Tried the likeliest:"
+            if catalog else "Couldn't fetch NVIDIA's model list; tried the built-in ones:")
+    working = sorted((took, m) for m, took, _ in results if took is not None)
+    if working:
+        best = working[0][1]
+        _remember_nvidia(best)
+        tail = f"Using {best} from now on (fastest that answered)."
+        if os.environ.get("AIT_NVIDIA_EXPLAIN_MODEL"):
+            tail += "\nNote: AIT_NVIDIA_EXPLAIN_MODEL is set and takes priority. Remove it to use this one."
+    else:
+        tail = ("None answered. NVIDIA's free tier is often busy: try `ait models` again in a few "
+                "minutes, or use an Anthropic key (`ait key`) for reliable answers.")
+    return f"{head}\n" + "\n".join(lines) + f"\n\n{tail}"
 
 
 async def complete(task: str, system: str, user: str, max_tokens: int = 600) -> tuple[str, str]:
